@@ -2,19 +2,29 @@ spring:
   codec:
     max-in-memory-size: 10MB
   datasource:
-    # Railway는 DATABASE_URL 제공 (postgres://user:pass@host:port/db 형식)
-    # Spring은 jdbc:postgresql:// 형식이 필요하므로 JDBC_DATABASE_URL 사용
-    url: ${JDBC_DATABASE_URL:jdbc:postgresql://localhost:5433/scanops}
-    username: ${JDBC_DATABASE_USERNAME:scanops}
-    password: ${JDBC_DATABASE_PASSWORD:scanops}
+    # Railway PostgreSQL 플러그인은 PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD 자동 주입
+    # JDBC_DATABASE_URL을 수동 설정하거나, PG* 개별 변수를 조합해서 사용
+    url: ${JDBC_DATABASE_URL:jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5433}/${PGDATABASE:scanops}}
+    username: ${PGUSER:${JDBC_DATABASE_USERNAME:scanops}}
+    password: ${PGPASSWORD:${JDBC_DATABASE_PASSWORD:scanops}}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: false
+    open-in-view: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
 
 server:
   port: ${PORT:8080}

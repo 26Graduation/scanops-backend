@@ -1,7 +1,9 @@
 .gradle/
 build/
 *.class
-*.jar
+# 빌드 산출물 jar만 제외 (gradle-wrapper.jar는 포함)
+build/**/*.jar
+!gradle/wrapper/gradle-wrapper.jar
 .env
 .env.local
 *.log

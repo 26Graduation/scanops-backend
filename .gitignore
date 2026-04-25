@@ -1,0 +1,9 @@
+.gradle/
+build/
+*.class
+*.jar
+.env
+.env.local
+*.log
+.DS_Store
+HELP.md

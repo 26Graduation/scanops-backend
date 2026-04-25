@@ -1,5 +1,6 @@
 package com.scanops.scan;
 
+import com.scanops.vulnerability.Vulnerability;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +24,11 @@ public class ScanController {
     @GetMapping("/{id}")
     public ResponseEntity<ScanJob> getScan(@PathVariable UUID id) {
         return ResponseEntity.ok(scanService.getScan(id));
+    }
+
+    @GetMapping("/{id}/vulnerabilities")
+    public ResponseEntity<List<Vulnerability>> getVulnerabilities(@PathVariable UUID id) {
+        return ResponseEntity.ok(scanService.getVulnerabilities(id));
     }
 
     @GetMapping

@@ -1,12 +1,14 @@
 spring:
+  codec:
+    max-in-memory-size: 10MB
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/scanops}
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/scanops}
     username: ${DB_USERNAME:scanops}
     password: ${DB_PASSWORD:scanops}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: create
     show-sql: false
     properties:
       hibernate:
@@ -17,7 +19,7 @@ server:
 
 zap:
   host: ${ZAP_HOST:http://localhost:8090}
-  api-key: ${ZAP_API_KEY:}
+  api-key: ${ZAP_API_KEY:scanops-local-key}
 
 ai:
   openai:
@@ -30,4 +32,4 @@ ai:
     api-key: ${GEMINI_API_KEY:}
 
 cors:
-  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,https://*.vercel.app}
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174,https://*.vercel.app}

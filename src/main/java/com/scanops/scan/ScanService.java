@@ -1,6 +1,8 @@
 package com.scanops.scan;
 
 import com.scanops.verify.DomainVerifyService;
+import com.scanops.vulnerability.Vulnerability;
+import com.scanops.vulnerability.VulnerabilityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -13,7 +15,8 @@ public class ScanService {
 
     private final ScanJobRepository scanJobRepository;
     private final DomainVerifyService domainVerifyService;
-    private final ZapClient zapClient;
+    private final ScanPipelineRunner pipelineRunner;
+    private final VulnerabilityService vulnerabilityService;
 
     public ScanJob createScan(ScanRequest request) {
         boolean verified = domainVerifyService.isVerified(request.getTargetUrl());
@@ -26,11 +29,7 @@ public class ScanService {
                 .build();
 
         ScanJob saved = scanJobRepository.save(job);
-
-        if (verified) {
-            zapClient.startScanAsync(saved);
-        }
-
+        pipelineRunner.run(saved);
         return saved;
     }
 
@@ -41,5 +40,9 @@ public class ScanService {
 
     public List<ScanJob> listScans() {
         return scanJobRepository.findAll();
+    }
+
+    public List<Vulnerability> getVulnerabilities(UUID jobId) {
+        return vulnerabilityService.findByJobId(jobId);
     }
 }

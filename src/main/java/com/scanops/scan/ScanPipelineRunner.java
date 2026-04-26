@@ -1,5 +1,7 @@
 package com.scanops.scan;
 
+import com.scanops.ai.AiRouter;
+import com.scanops.ai.VulnMetaResult;
 import com.scanops.vulnerability.CvssCalculator;
 import com.scanops.vulnerability.RiskLevel;
 import com.scanops.vulnerability.Vulnerability;
@@ -23,6 +25,7 @@ public class ScanPipelineRunner {
     private final ZapClient zapClient;
     private final VulnerabilityRepository vulnerabilityRepository;
     private final CvssCalculator cvssCalculator;
+    private final AiRouter aiRouter;
 
     @Async("scanExecutor")
     public void run(ScanJob job) {
@@ -43,7 +46,17 @@ public class ScanPipelineRunner {
             log.info("Job {} found {} alerts", job.getId(), alerts.size());
 
             for (ZapAlert alert : alerts) {
-                vulnerabilityRepository.save(buildVulnerability(job.getId(), alert));
+                Vulnerability vuln = buildVulnerability(job.getId(), alert);
+                if (needsAiMeta(vuln)) {
+                    try {
+                        VulnMetaResult meta = aiRouter.generateMeta(alert.getAlert());
+                        vuln.setDescription(meta.description());
+                        vuln.setSolution(meta.solution());
+                    } catch (Exception e) {
+                        log.warn("AI meta generation failed for '{}': {}", alert.getAlert(), e.getMessage());
+                    }
+                }
+                vulnerabilityRepository.save(vuln);
             }
 
             job.setStatus(ScanStatus.DONE);
@@ -84,7 +97,14 @@ public class ScanPipelineRunner {
                 .riskLevel(riskLevel)
                 .cvssScore(cvssScore)
                 .cvssVector(cvssVector)
+                .description(alert.getDescription())
+                .solution(alert.getSolution())
                 .build();
+    }
+
+    private boolean needsAiMeta(Vulnerability vuln) {
+        return vuln.getRiskLevel() != RiskLevel.INFORMATIONAL
+                && (vuln.getDescription() == null || vuln.getDescription().isBlank());
     }
 
     private RiskLevel mapRiskLevel(String risk) {

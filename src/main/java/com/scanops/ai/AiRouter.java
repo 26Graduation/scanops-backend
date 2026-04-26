@@ -33,6 +33,19 @@ public class AiRouter {
         throw new RuntimeException("All AI analyzers failed");
     }
 
+    public VulnMetaResult generateMeta(String vulnType) {
+        for (AiModel model : List.of(AiModel.GPT, AiModel.CLAUDE, AiModel.GEMINI, AiModel.CUSTOM)) {
+            AiAnalyzer analyzer = findAnalyzer(model);
+            if (analyzer == null) continue;
+            try {
+                return analyzer.generateMeta(vulnType);
+            } catch (Exception e) {
+                log.warn("Analyzer {} generateMeta failed, trying next: {}", model, e.getMessage());
+            }
+        }
+        throw new RuntimeException("All AI analyzers failed for generateMeta");
+    }
+
     private AiAnalyzer findAnalyzer(AiModel model) {
         return analyzers.stream()
                 .filter(a -> a.getModel() == model)

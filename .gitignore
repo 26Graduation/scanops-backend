@@ -9,3 +9,12 @@ build/**/*.jar
 *.log
 .DS_Store
 HELP.md
+
+# 다른 레포/Python 모델 자산은 이 백엔드 레포에서 추적하지 않음 (각자 별도 레포)
+scripts/
+scanops-backend/
+scanops-frontend/
+scanops-infra/
+scanops-model/
+__pycache__/
+*.pyc

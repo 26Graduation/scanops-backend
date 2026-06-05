@@ -1,5 +1,7 @@
 package com.scanops.scan;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -24,8 +26,9 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ZapClient {
 
-    private final WebClient client;
-    private final String    zapApiKey;
+    private final WebClient    client;
+    private final String       zapApiKey;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ZapClient(
             WebClient.Builder webClientBuilder,
@@ -105,7 +108,7 @@ public class ZapClient {
     @SuppressWarnings("unchecked")
     public List<ZapAlert> getAlerts(String targetUrl) {
         log.info("[ZAP] 알림 조회: {}", targetUrl);
-        Map<?, ?> response = get("/JSON/core/view/alerts/", Map.of("baseurl", targetUrl));
+        Map<String, Object> response = get("/JSON/core/view/alerts/", Map.of("baseurl", targetUrl));
 
         List<?> rawAlerts = (List<?>) response.get("alerts");
         if (rawAlerts == null) {
@@ -135,9 +138,15 @@ public class ZapClient {
      * - 빈 응답 body 를 RuntimeException 으로 변환
      * - 로그에 path와 응답 내용을 기록하여 디버깅 용이
      */
-    private Map<?, ?> get(String path, Map<String, String> params) {
+    /**
+     * ZAP은 JSON 응답에도 Content-Type: text/html 을 반환하는 경우가 있음.
+     * WebClient의 bodyToMono(Map.class)는 Content-Type 기반으로 디코더를 선택하므로
+     * text/html 응답은 null을 반환함.
+     * → bodyToMono(String.class)로 raw 문자열을 받은 뒤 ObjectMapper로 직접 파싱.
+     */
+    private Map<String, Object> get(String path, Map<String, String> params) {
         try {
-            Map<?, ?> response = client.get()
+            String raw = client.get()
                     .uri(uri -> {
                         var builder = uri.path(path).queryParam("apikey", zapApiKey);
                         params.forEach(builder::queryParam);
@@ -151,20 +160,23 @@ public class ZapClient {
                                 return new RuntimeException(
                                         "ZAP HTTP 에러 " + res.statusCode() + " (" + path + "): " + body);
                             }))
-                    .bodyToMono(Map.class)
+                    .bodyToMono(String.class)
                     .block();
 
-            if (response == null) {
+            if (raw == null || raw.isBlank()) {
                 throw new RuntimeException("ZAP 빈 응답 — path=" + path);
             }
 
-            log.debug("[ZAP] {} 응답: {}", path, response);
-            return response;
+            log.debug("[ZAP] {} 응답: {}", path, raw);
+            return objectMapper.readValue(raw, new TypeReference<Map<String, Object>>() {});
 
         } catch (WebClientResponseException e) {
             log.error("[ZAP] 요청 실패 — path={}, status={}, body={}",
                     path, e.getStatusCode(), e.getResponseBodyAsString());
             throw new RuntimeException("ZAP 요청 실패: " + e.getMessage(), e);
+        } catch (Exception e) {
+            if (e instanceof RuntimeException re) throw re;
+            throw new RuntimeException("ZAP 응답 파싱 실패 — path=" + path + ": " + e.getMessage(), e);
         }
     }
 

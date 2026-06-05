@@ -45,12 +45,19 @@ public class ZapClient {
 
     // ── Public API ───────────────────────────────────────
 
-    /** ZAP 스캔 트리에 대상 URL 등록 */
+    /**
+     * ZAP 스캔 트리에 대상 URL 등록 (선택적 단계 — 실패해도 스파이더가 자체 크롤링함)
+     */
     public void accessUrl(String targetUrl) {
         log.info("[ZAP] accessUrl: {}", targetUrl);
-        Map<?, ?> response = get("/JSON/core/action/accessUrl/",
-                Map.of("url", targetUrl, "followRedirects", "true"));
-        log.info("[ZAP] accessUrl 응답: {}", response);
+        try {
+            Map<String, Object> response = get("/JSON/core/action/accessUrl/",
+                    Map.of("url", targetUrl, "followRedirects", "true"));
+            log.info("[ZAP] accessUrl 응답: {}", response);
+        } catch (Exception e) {
+            // accessUrl 실패는 치명적이지 않음 — 경고만 남기고 스파이더로 진행
+            log.warn("[ZAP] accessUrl 실패 (무시하고 계속): {}", e.getMessage());
+        }
     }
 
     /**

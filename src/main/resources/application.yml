@@ -6,11 +6,17 @@ spring:
     username: ${DB_USER}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20       # scan-async(8) + poll(4) + API 요청 여유분
+      minimum-idle: 5
+      connection-timeout: 10000   # 10초 내 커넥션 못 얻으면 예외 (무한 대기 방지)
+      idle-timeout: 300000
+      max-lifetime: 1200000
   jpa:
     hibernate:
       ddl-auto: validate
     show-sql: false
-    open-in-view: false
+    open-in-view: false           # false여야 요청 종료 즉시 커넥션 반환
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -30,6 +36,9 @@ server:
 zap:
   host: ${ZAP_HOST:http://localhost:8090}
   api-key: ${ZAP_API_KEY:}
+  timeout:
+    spider-minutes: ${ZAP_SPIDER_TIMEOUT_MIN:10}      # 스파이더 최대 대기 시간 (분)
+    active-scan-minutes: ${ZAP_ACTIVE_SCAN_TIMEOUT_MIN:60}  # 액티브 스캔 최대 대기 시간 (분)
 
 ai:
   openai:

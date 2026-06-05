@@ -18,3 +18,5 @@ scanops-infra/
 scanops-model/
 __pycache__/
 *.pyc
+
+*.pem

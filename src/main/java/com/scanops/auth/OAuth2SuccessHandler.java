@@ -2,6 +2,8 @@ package com.scanops.auth;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.user.OAuth2User;
@@ -10,6 +12,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -20,6 +24,8 @@ import java.util.Map;
  */
 @Component
 public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(OAuth2SuccessHandler.class);
 
     private final JwtService jwtService;
     private final String frontendUrl;
@@ -33,26 +39,42 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
                                         Authentication authentication) throws IOException {
-        OAuth2User user = (OAuth2User) authentication.getPrincipal();
-        String githubId = String.valueOf(user.getAttribute("id"));
-        String login = user.getAttribute("login");
-        String name = user.getAttribute("name");
-        String email = user.getAttribute("email");
-        String avatar = user.getAttribute("avatar_url");
+        try {
+            OAuth2User user = (OAuth2User) authentication.getPrincipal();
+            Object idAttr = user.getAttribute("id");
+            String githubId = idAttr != null ? String.valueOf(idAttr) : user.getName();
+            String login = strAttr(user, "login");
+            String name = strAttr(user, "name");
+            String email = strAttr(user, "email");
+            String avatar = strAttr(user, "avatar_url");
 
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("login", login);
-        claims.put("name", name != null ? name : login);
-        claims.put("email", email != null ? email : "");
-        claims.put("avatar", avatar != null ? avatar : "");
-        claims.put("plan", "FREE"); // 신규 사용자 기본 플랜
+            Map<String, Object> claims = new HashMap<>();
+            claims.put("login", login != null ? login : "");
+            claims.put("name", name != null ? name : (login != null ? login : "user"));
+            claims.put("email", email != null ? email : "");
+            claims.put("avatar", avatar != null ? avatar : "");
+            claims.put("plan", "FREE"); // 신규 사용자 기본 플랜
 
-        String token = jwtService.issue(claims, githubId);
+            String token = jwtService.issue(claims, githubId);
+            log.info("OAuth login ok: github user {} ({})", login, githubId);
 
-        String redirect = UriComponentsBuilder
-                .fromUriString(frontendUrl + "/auth/github/callback")
-                .queryParam("token", token)
-                .build().toUriString();
-        response.sendRedirect(redirect);
+            String redirect = UriComponentsBuilder
+                    .fromUriString(frontendUrl + "/auth/github/callback")
+                    .queryParam("token", token)
+                    .build().toUriString();
+            response.sendRedirect(redirect);
+        } catch (Exception e) {
+            // 무엇이 터지든 Whitelabel 500 대신 프론트로 원인을 들고 리다이렉트
+            log.error("OAuth success handler failed", e);
+            String msg = e.getClass().getSimpleName() + ": " + (e.getMessage() == null ? "" : e.getMessage());
+            response.sendRedirect(frontendUrl + "/login?error="
+                    + URLEncoder.encode(msg, StandardCharsets.UTF_8));
+        }
+    }
+
+    /** getAttribute가 String이 아닐 수도 있어 안전하게 문자열화. */
+    private static String strAttr(OAuth2User user, String key) {
+        Object v = user.getAttribute(key);
+        return v == null ? null : String.valueOf(v);
     }
 }

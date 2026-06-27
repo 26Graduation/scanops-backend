@@ -24,7 +24,14 @@ public class JwtService {
     public JwtService(
             @Value("${app.jwt.secret}") String secret,
             @Value("${app.jwt.ttl-hours:168}") long ttlHours) {
-        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
+        // HS256은 최소 32바이트 필요 — 짧게 설정해도 죽지 않도록 우측 패딩(운영은 32+ 권장)
+        if (bytes.length < 32) {
+            byte[] padded = new byte[32];
+            System.arraycopy(bytes, 0, padded, 0, bytes.length);
+            bytes = padded;
+        }
+        this.key = Keys.hmacShaKeyFor(bytes);
         this.ttlMillis = ttlHours * 3600_000L;
     }
 

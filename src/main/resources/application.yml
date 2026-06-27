@@ -24,6 +24,9 @@ spring:
             client-id: ${GITHUB_OAUTH_CLIENT_ID:}
             client-secret: ${GITHUB_OAUTH_CLIENT_SECRET:}
             scope: read:user,user:email
+            # authorize·token 교환에서 동일한 redirect_uri를 쓰도록 고정(프록시 http/https 불일치 방지).
+            # 로컬 테스트 시 GITHUB_OAUTH_REDIRECT_URI=http://localhost:8080/login/oauth2/code/github 로 덮어쓰기.
+            redirect-uri: ${GITHUB_OAUTH_REDIRECT_URI:https://scanops-backend-production.up.railway.app/login/oauth2/code/github}
 
 # 사용자 로그인용 OAuth/JWT (GitHub App과 별개)
 app:

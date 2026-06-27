@@ -44,6 +44,9 @@ management:
 
 server:
   port: ${PORT:8080}
+  # Railway 등 리버스 프록시 뒤에서 https/호스트를 올바르게 인식 → OAuth redirect_uri가
+  # https://<public-host>/login/oauth2/code/github 로 정확히 생성되도록.
+  forward-headers-strategy: framework
 
 zap:
   host: ${ZAP_HOST:http://localhost:8090}

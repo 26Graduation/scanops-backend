@@ -18,3 +18,8 @@ scanops-infra/
 scanops-model/
 __pycache__/
 *.pyc
+
+# 비밀키/인증서 (커밋 금지)
+*.pem
+*.key
+*private-key*

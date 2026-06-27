@@ -16,6 +16,22 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+  security:
+    oauth2:
+      client:
+        registration:
+          github:
+            client-id: ${GITHUB_OAUTH_CLIENT_ID:}
+            client-secret: ${GITHUB_OAUTH_CLIENT_SECRET:}
+            scope: read:user,user:email
+
+# 사용자 로그인용 OAuth/JWT (GitHub App과 별개)
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  jwt:
+    # 운영에선 32바이트 이상 랜덤 시크릿을 JWT_SECRET 환경변수로 주입
+    secret: ${JWT_SECRET:dev-only-secret-change-me-please-32bytes-min!!}
+    ttl-hours: ${JWT_TTL_HOURS:168}
 
 management:
   endpoints:

@@ -4,7 +4,12 @@ import com.scanops.verify.DomainVerifyService;
 import com.scanops.vulnerability.Vulnerability;
 import com.scanops.vulnerability.VulnerabilityService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -76,8 +81,40 @@ public class ScanService {
                 .orElseThrow(() -> new RuntimeException("Scan job not found: " + id));
     }
 
-    public List<ScanJob> listScans() {
-        return scanJobRepository.findAll();
+    /**
+     * 스캔 기록을 최신순으로 페이지 단위 조회한다.
+     * @param mode null/"ALL"이면 전체, WEBSITE·GITHUB_REPO면 해당 모드만.
+     *             매칭되지 않는 모드(예: 아직 저장되지 않는 PR)는 빈 페이지를 돌려준다.
+     * @param q    대상 URL 부분 검색어(빈 값이면 전체).
+     */
+    public Page<ScanJob> listScans(int page, int size, String mode, String q) {
+        Pageable pageable = PageRequest.of(
+                Math.max(page, 0), Math.min(Math.max(size, 1), 100),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        String query = q == null ? "" : q.trim();
+
+        if (mode == null || mode.isBlank() || mode.equalsIgnoreCase("ALL")) {
+            return scanJobRepository.findByTargetUrlContainingIgnoreCase(query, pageable);
+        }
+        ScanMode m;
+        try {
+            m = ScanMode.valueOf(mode);
+        } catch (IllegalArgumentException e) {
+            // 저장되지 않는 모드(예: 아직 없는 PR)로 필터하면 결과 없음 (전체로 흐르지 않게)
+            return Page.empty(pageable);
+        }
+        return scanJobRepository.findByScanModeAndTargetUrlContainingIgnoreCase(m, query, pageable);
+    }
+
+    /** 스캔 기록 삭제. 연결된 취약점(jobId)도 함께 제거한다. */
+    @Transactional
+    public void deleteScan(UUID id) {
+        if (!scanJobRepository.existsById(id)) {
+            throw new IllegalArgumentException("Scan job not found: " + id);
+        }
+        vulnerabilityService.deleteByJobId(id);
+        scanJobRepository.deleteById(id);
     }
 
     public List<Vulnerability> getVulnerabilities(UUID jobId) {

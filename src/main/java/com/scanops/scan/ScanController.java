@@ -2,6 +2,7 @@ package com.scanops.scan;
 
 import com.scanops.vulnerability.Vulnerability;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -50,8 +51,22 @@ public class ScanController {
         return ResponseEntity.ok(scanService.getVulnerabilities(id));
     }
 
+    /**
+     * 스캔 기록 페이지 조회 (최신순). 기본 10개씩.
+     * 예: /api/scans?page=0&size=10&mode=WEBSITE&q=example.com
+     */
     @GetMapping
-    public ResponseEntity<List<ScanJob>> listScans() {
-        return ResponseEntity.ok(scanService.listScans());
+    public ResponseEntity<Page<ScanJob>> listScans(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String mode,
+            @RequestParam(defaultValue = "") String q) {
+        return ResponseEntity.ok(scanService.listScans(page, size, mode, q));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteScan(@PathVariable UUID id) {
+        scanService.deleteScan(id);
+        return ResponseEntity.noContent().build();
     }
 }

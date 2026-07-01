@@ -1,5 +1,6 @@
 package com.scanops.scan;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.scanops.user.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -24,6 +25,7 @@ public class Scan {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
+    @JsonIgnore
     private User user;
 
     @Enumerated(EnumType.STRING)

@@ -1,5 +1,6 @@
 package com.scanops.auth;
 
+import com.scanops.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -28,11 +29,13 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     private static final Logger log = LoggerFactory.getLogger(OAuth2SuccessHandler.class);
 
     private final JwtService jwtService;
+    private final UserService userService;
     private final String frontendUrl;
 
-    public OAuth2SuccessHandler(JwtService jwtService,
+    public OAuth2SuccessHandler(JwtService jwtService, UserService userService,
                                 @Value("${app.frontend-url}") String frontendUrl) {
         this.jwtService = jwtService;
+        this.userService = userService;
         this.frontendUrl = frontendUrl;
     }
 
@@ -54,6 +57,12 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
             claims.put("email", email != null ? email : "");
             claims.put("avatar", avatar != null ? avatar : "");
             claims.put("plan", "FREE"); // 신규 사용자 기본 플랜
+
+            // 결정 6: 로그인 성공 시 users 테이블에 upsert (email 미제공 시 noreply 대체)
+            String effectiveEmail = (email != null && !email.isBlank())
+                    ? email
+                    : (login != null ? login : githubId) + "@users.noreply.github.com";
+            userService.upsertGithubUser(effectiveEmail, name != null ? name : login, githubId);
 
             String token = jwtService.issue(claims, githubId);
             log.info("OAuth login ok: github user {} ({})", login, githubId);

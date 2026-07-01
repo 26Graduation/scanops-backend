@@ -3,9 +3,10 @@ package com.scanops.scan;
 import com.scanops.ai.AiRouter;
 import com.scanops.ai.VulnMetaResult;
 import com.scanops.vulnerability.CvssCalculator;
-import com.scanops.vulnerability.RiskLevel;
+import com.scanops.vulnerability.Severity;
 import com.scanops.vulnerability.Vulnerability;
 import com.scanops.vulnerability.VulnerabilityRepository;
+import com.scanops.vulnerability.VulnerabilityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -13,7 +14,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 import java.util.function.IntSupplier;
 
 @Component
@@ -21,57 +21,58 @@ import java.util.function.IntSupplier;
 @Slf4j
 public class ScanPipelineRunner {
 
-    private final ScanJobRepository scanJobRepository;
+    private final ScanRepository scanRepository;
     private final ZapClient zapClient;
     private final VulnerabilityRepository vulnerabilityRepository;
+    private final VulnerabilityService vulnerabilityService;
     private final CvssCalculator cvssCalculator;
     private final AiRouter aiRouter;
 
     @Async("scanExecutor")
-    public void run(ScanJob job) {
-        log.info("Scan pipeline starting for job {}, target={}", job.getId(), job.getTargetUrl());
-        job.setStatus(ScanStatus.RUNNING);
-        scanJobRepository.save(job);
+    public void run(Scan scan) {
+        log.info("Scan pipeline starting for scan {}, target={}", scan.getScanId(), scan.getTarget());
+        scan.setStatus(ScanStatus.RUNNING);
+        scan.setStartedAt(LocalDateTime.now());
+        scanRepository.save(scan);
 
         try {
-            zapClient.accessUrl(job.getTargetUrl());
+            zapClient.accessUrl(scan.getTarget());
 
-            String spiderId = zapClient.startSpider(job.getTargetUrl());
+            String spiderId = zapClient.startSpider(scan.getTarget());
             waitForCompletion("Spider", () -> zapClient.getSpiderProgress(spiderId));
 
-            String scanId = zapClient.startActiveScan(job.getTargetUrl());
-            waitForCompletion("ActiveScan", () -> zapClient.getActiveScanProgress(scanId));
+            String activeScanId = zapClient.startActiveScan(scan.getTarget());
+            waitForCompletion("ActiveScan", () -> zapClient.getActiveScanProgress(activeScanId));
 
-            List<ZapAlert> alerts = zapClient.getAlerts(job.getTargetUrl());
-            log.info("Job {} found {} alerts", job.getId(), alerts.size());
+            List<ZapAlert> alerts = zapClient.getAlerts(scan.getTarget());
+            log.info("Scan {} found {} alerts", scan.getScanId(), alerts.size());
 
             for (ZapAlert alert : alerts) {
-                Vulnerability vuln = buildVulnerability(job.getId(), alert);
+                Vulnerability vuln = buildVulnerability(scan, alert);
                 if (needsAiMeta(vuln)) {
                     try {
                         VulnMetaResult meta = aiRouter.generateMeta(
                                 alert.getAlert(), alert.getDescription(), alert.getSolution());
-                        vuln.setSummary(meta.summary());
-                        vuln.setDescription(meta.description());
+                        vuln.setCause(meta.description());
                         vuln.setSolution(meta.solution());
                     } catch (Exception e) {
                         log.warn("AI meta generation failed for '{}', will retry on next startup: {}",
                                 alert.getAlert(), e.getMessage());
                     }
                 }
-                // description이 null이면 마이그레이션 서비스가 재시도
                 vulnerabilityRepository.save(vuln);
             }
 
-            job.setStatus(ScanStatus.DONE);
+            vulnerabilityService.updateScanAggregates(scan);
+            scan.setStatus(ScanStatus.COMPLETED);
         } catch (Exception e) {
-            log.error("Scan pipeline failed for job {}: {}", job.getId(), e.getMessage());
-            job.setStatus(ScanStatus.FAILED);
+            log.error("Scan pipeline failed for scan {}: {}", scan.getScanId(), e.getMessage());
+            scan.setStatus(ScanStatus.FAILED);
         }
 
-        job.setFinishedAt(LocalDateTime.now());
-        scanJobRepository.save(job);
-        log.info("Scan pipeline finished for job {} with status {}", job.getId(), job.getStatus());
+        scan.setCompletedAt(LocalDateTime.now());
+        scanRepository.save(scan);
+        log.info("Scan pipeline finished for scan {} with status {}", scan.getScanId(), scan.getStatus());
     }
 
     private void waitForCompletion(String phase, IntSupplier progressCheck) {
@@ -88,35 +89,35 @@ public class ScanPipelineRunner {
         }
     }
 
-    private Vulnerability buildVulnerability(UUID jobId, ZapAlert alert) {
-        RiskLevel riskLevel = mapRiskLevel(alert.getRisk());
-        double cvssScore = cvssCalculator.calculate(riskLevel, alert.getAlert());
-        String cvssVector = cvssCalculator.generateVector(riskLevel, alert.getAlert());
+    private Vulnerability buildVulnerability(Scan scan, ZapAlert alert) {
+        Severity severity = mapSeverity(alert.getRisk());
+        double cvssScore = cvssCalculator.calculate(severity, alert.getAlert());
+        String cvssVector = cvssCalculator.generateVector(severity, alert.getAlert());
 
         return Vulnerability.builder()
-                .jobId(jobId)
+                .scan(scan)
                 .vulnType(alert.getAlert())
                 .url(alert.getUrl())
                 .parameter(alert.getParam())
-                .riskLevel(riskLevel)
+                .severity(severity)
                 .cvssScore(cvssScore)
                 .cvssVector(cvssVector)
-                .description(alert.getDescription())
+                .cause(alert.getDescription())
                 .solution(alert.getSolution())
                 .build();
     }
 
     private boolean needsAiMeta(Vulnerability vuln) {
-        return vuln.getRiskLevel() != RiskLevel.INFORMATIONAL;
+        return vuln.getSeverity() != Severity.INFORMATIONAL;
     }
 
-    private RiskLevel mapRiskLevel(String risk) {
-        if (risk == null) return RiskLevel.INFORMATIONAL;
+    private Severity mapSeverity(String risk) {
+        if (risk == null) return Severity.INFORMATIONAL;
         return switch (risk.toLowerCase()) {
-            case "high" -> RiskLevel.HIGH;
-            case "medium" -> RiskLevel.MEDIUM;
-            case "low" -> RiskLevel.LOW;
-            default -> RiskLevel.INFORMATIONAL;
+            case "high" -> Severity.HIGH;
+            case "medium" -> Severity.MEDIUM;
+            case "low" -> Severity.LOW;
+            default -> Severity.INFORMATIONAL;
         };
     }
 }

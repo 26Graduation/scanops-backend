@@ -10,12 +10,15 @@ spring:
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate      # Flyway가 스키마 소유 → Hibernate는 엔티티↔테이블 검증만
     show-sql: false
     open-in-view: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+    baseline-on-migrate: true   # 기존 비-Flyway DB에도 안전하게 적용
   security:
     oauth2:
       client:

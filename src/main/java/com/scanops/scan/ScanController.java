@@ -21,7 +21,7 @@ public class ScanController {
     private final ScanService scanService;
 
     @PostMapping
-    public ResponseEntity<ScanJob> createScan(@Valid @RequestBody ScanRequest request) {
+    public ResponseEntity<Scan> createScan(@Valid @RequestBody ScanRequest request) {
         return ResponseEntity.ok(scanService.createScan(request));
     }
 
@@ -42,7 +42,7 @@ public class ScanController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ScanJob> getScan(@PathVariable UUID id) {
+    public ResponseEntity<Scan> getScan(@PathVariable UUID id) {
         return ResponseEntity.ok(scanService.getScan(id));
     }
 
@@ -56,7 +56,7 @@ public class ScanController {
      * 예: /api/scans?page=0&size=10&mode=WEBSITE&q=example.com
      */
     @GetMapping
-    public ResponseEntity<Page<ScanJob>> listScans(
+    public ResponseEntity<Page<Scan>> listScans(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String mode,

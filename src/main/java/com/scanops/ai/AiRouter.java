@@ -23,9 +23,7 @@ public class AiRouter {
             AiAnalyzer analyzer = findAnalyzer(model);
             if (analyzer == null) continue;
             try {
-                String result = analyzer.analyze(vulnerability);
-                vulnerability.setAiModel(model);
-                return result;
+                return analyzer.analyze(vulnerability);
             } catch (Exception e) {
                 log.warn("Analyzer {} failed, trying next: {}", model, e.getMessage());
             }

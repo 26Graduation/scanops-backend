@@ -1,7 +1,6 @@
 package com.scanops.scan;
 
-import com.scanops.ai.AiModel;
-import com.scanops.vulnerability.RiskLevel;
+import com.scanops.vulnerability.Severity;
 import com.scanops.vulnerability.Vulnerability;
 import com.scanops.vulnerability.VulnerabilityService;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +25,7 @@ import java.util.Map;
 public class GithubPipelineRunner {
 
     private final GithubScanService githubScanService;
-    private final ScanJobRepository scanJobRepository;
+    private final ScanRepository scanRepository;
     private final VulnerabilityService vulnerabilityService;
 
     // 취약점 유형별 키워드 (줄번호 탐색용)
@@ -66,16 +65,17 @@ public class GithubPipelineRunner {
     }
 
     @Async
-    public void run(ScanJob job) {
-        log.info("[GitHub 스캔] 시작: {}", job.getTargetUrl());
+    public void run(Scan scan) {
+        log.info("[GitHub 스캔] 시작: {}", scan.getTarget());
         try {
-            job.setStatus(ScanStatus.RUNNING);
-            scanJobRepository.save(job);
+            scan.setStatus(ScanStatus.RUNNING);
+            scan.setStartedAt(LocalDateTime.now());
+            scanRepository.save(scan);
 
-            GithubScanService.ScanResult scan =
-                    githubScanService.scanRepo(job.getTargetUrl());
-            ScanopsModelClient.BatchResult result = scan.batch();
-            java.util.Map<String, String> fileContents = scan.fileContents();
+            GithubScanService.ScanResult scanResult =
+                    githubScanService.scanRepo(scan.getTarget());
+            ScanopsModelClient.BatchResult result = scanResult.batch();
+            java.util.Map<String, String> fileContents = scanResult.fileContents();
 
             // 탐지된 취약점만 저장
             for (ScanopsModelClient.AnalyzeResult r : result.results()) {
@@ -94,60 +94,58 @@ public class GithubPipelineRunner {
                 );
 
                 if (lineNums.isEmpty()) {
-                    // 라인을 못 찾은 경우 1개만 저장
                     Vulnerability vuln = Vulnerability.builder()
-                            .jobId(job.getId())
+                            .scan(scan)
                             .vulnType(r.vulnerability())
-                            .riskLevel(mapRiskLevel(r.severity()))
-                            .description("파일: " + r.file_path()
+                            .severity(mapSeverity(r.severity()))
+                            .cause("파일: " + r.file_path()
                                     + "\n공격: " + r.attack()
                                     + (cveDesc.isEmpty() ? "" : "\n관련 CVE: " + cveDesc))
                             .solution(r.fix())
-                            .url(job.getTargetUrl() + "/blob/HEAD/" + r.file_path())
-                            .aiModel(AiModel.CUSTOM)
+                            .url(scan.getTarget() + "/blob/HEAD/" + r.file_path())
                             .build();
                     vulnerabilityService.save(vuln);
                 } else {
                     for (int lineNum : lineNums) {
                         Vulnerability vuln = Vulnerability.builder()
-                                .jobId(job.getId())
+                                .scan(scan)
                                 .vulnType(r.vulnerability())
-                                .riskLevel(mapRiskLevel(r.severity()))
-                                .description("파일: " + r.file_path()
+                                .severity(mapSeverity(r.severity()))
+                                .cause("파일: " + r.file_path()
                                         + "\n줄번호: " + lineNum
                                         + "\n공격: " + r.attack()
                                         + (cveDesc.isEmpty() ? "" : "\n관련 CVE: " + cveDesc))
                                 .solution(r.fix())
-                                .url(job.getTargetUrl() + "/blob/HEAD/" + r.file_path() + "#L" + lineNum)
-                                .aiModel(AiModel.CUSTOM)
+                                .url(scan.getTarget() + "/blob/HEAD/" + r.file_path() + "#L" + lineNum)
                                 .build();
                         vulnerabilityService.save(vuln);
                     }
                 }
             }
 
-            job.setStatus(ScanStatus.DONE);
-            job.setFinishedAt(LocalDateTime.now());
-            scanJobRepository.save(job);
+            vulnerabilityService.updateScanAggregates(scan);
+            scan.setStatus(ScanStatus.COMPLETED);
+            scan.setCompletedAt(LocalDateTime.now());
+            scanRepository.save(scan);
 
             log.info("[GitHub 스캔] 완료: 취약점 {}개 발견 / 총 {}개 파일",
                     result.detected_count(), result.total());
 
         } catch (Exception e) {
             log.error("[GitHub 스캔] 실패: {}", e.getMessage(), e);
-            job.setStatus(ScanStatus.FAILED);
-            job.setFinishedAt(LocalDateTime.now());
-            scanJobRepository.save(job);
+            scan.setStatus(ScanStatus.FAILED);
+            scan.setCompletedAt(LocalDateTime.now());
+            scanRepository.save(scan);
         }
     }
 
-    private RiskLevel mapRiskLevel(String severity) {
-        if (severity == null) return RiskLevel.INFORMATIONAL;
+    private Severity mapSeverity(String severity) {
+        if (severity == null) return Severity.INFORMATIONAL;
         return switch (severity.toUpperCase()) {
-            case "HIGH", "CRITICAL" -> RiskLevel.HIGH;
-            case "MEDIUM" -> RiskLevel.MEDIUM;
-            case "LOW" -> RiskLevel.LOW;
-            default -> RiskLevel.INFORMATIONAL;
+            case "HIGH", "CRITICAL" -> Severity.HIGH;
+            case "MEDIUM" -> Severity.MEDIUM;
+            case "LOW" -> Severity.LOW;
+            default -> Severity.INFORMATIONAL;
         };
     }
 }

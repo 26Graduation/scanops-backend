@@ -32,6 +32,10 @@ dependencies {
 
     runtimeOnly 'org.postgresql:postgresql'
 
+    // DB 마이그레이션 (스키마 소유 — Hibernate는 validate만)
+    // Spring Boot 3.2.5 → Flyway 9.x (postgresql 지원이 flyway-core에 포함)
+    implementation 'org.flywaydb:flyway-core'
+
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 

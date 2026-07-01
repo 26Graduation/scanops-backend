@@ -15,8 +15,8 @@ public class ReportService {
 
     private final VulnerabilityService vulnerabilityService;
 
-    public ReportResponse getReport(UUID jobId) {
-        List<Vulnerability> vulns = vulnerabilityService.findByJobId(jobId);
+    public ReportResponse getReport(UUID scanId) {
+        List<Vulnerability> vulns = vulnerabilityService.findByScanId(scanId);
 
         double maxCvss = vulns.stream()
                 .map(Vulnerability::getCvssScore)
@@ -24,6 +24,6 @@ public class ReportService {
                 .max(Comparator.naturalOrder())
                 .orElse(0.0);
 
-        return new ReportResponse(jobId.toString(), maxCvss, vulns);
+        return new ReportResponse(scanId.toString(), maxCvss, vulns);
     }
 }

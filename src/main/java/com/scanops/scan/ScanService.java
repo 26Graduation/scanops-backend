@@ -6,6 +6,7 @@ import com.scanops.verify.DomainVerifyService;
 import com.scanops.vulnerability.Vulnerability;
 import com.scanops.vulnerability.VulnerabilityService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -27,7 +28,15 @@ public class ScanService {
     private final GithubPipelineRunner githubPipelineRunner;
     private final VulnerabilityService vulnerabilityService;
 
-    public Scan createScan(ScanRequest request) {
+    /** DAST(웹) 스캔에 도메인 소유권 인증을 강제할지. 데모 등에서 끄려면 false. */
+    @Value("${scanops.dast.require-verification:true}")
+    private boolean requireDastVerification;
+
+    /**
+     * @param ownerId 로그인 사용자 식별자(JWT subject). WEBSITE 인증 스코프에 사용.
+     *                미로그인(null)이고 인증이 강제되면 WEBSITE 스캔은 거부된다.
+     */
+    public Scan createScan(ScanRequest request, String ownerId) {
         // scanMode 자동 판별: github.com URL이면 GITHUB_REPO
         ScanMode mode = request.getScanMode();
         if (mode == null) {
@@ -55,8 +64,22 @@ public class ScanService {
             }
         }
 
-        boolean verified = mode == ScanMode.WEBSITE
-                && domainVerifyService.isVerified(request.getTargetUrl());
+        // WEBSITE(DAST): 소유권을 사용자별로 확인하고, 스캔 직전 .well-known 재검증(TOCTOU 방지).
+        boolean verified = false;
+        if (mode == ScanMode.WEBSITE) {
+            if (ownerId == null) {
+                if (requireDastVerification) {
+                    throw new IllegalArgumentException("도메인 소유권 인증을 위해 로그인이 필요합니다.");
+                }
+            } else {
+                verified = domainVerifyService.verifyForScan(ownerId, request.getTargetUrl());
+                if (requireDastVerification && !verified) {
+                    throw new IllegalArgumentException(
+                        "도메인 소유권 인증이 필요합니다. " + DomainVerifyService.VERIFY_PATH
+                        + " 파일을 배포하고 인증을 완료해 주세요.");
+                }
+            }
+        }
 
         User owner = userService.findOrCreateByEmail(request.getOwnerEmail());
         ScanCategory category = mode == ScanMode.GITHUB_REPO ? ScanCategory.SAST : ScanCategory.DAST;

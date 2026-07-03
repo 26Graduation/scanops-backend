@@ -6,5 +6,5 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface DomainVerificationRepository extends JpaRepository<DomainVerification, UUID> {
-    Optional<DomainVerification> findByDomain(String domain);
+    Optional<DomainVerification> findByOwnerIdAndDomain(String ownerId, String domain);
 }

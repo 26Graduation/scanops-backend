@@ -1,6 +1,8 @@
 package com.scanops.scan;
 
+import com.scanops.auth.JwtService;
 import com.scanops.vulnerability.Vulnerability;
+import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
@@ -19,10 +21,25 @@ import java.util.UUID;
 public class ScanController {
 
     private final ScanService scanService;
+    private final JwtService jwtService;
 
     @PostMapping
-    public ResponseEntity<Scan> createScan(@Valid @RequestBody ScanRequest request) {
-        return ResponseEntity.ok(scanService.createScan(request));
+    public ResponseEntity<Scan> createScan(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @Valid @RequestBody ScanRequest request) {
+        return ResponseEntity.ok(scanService.createScan(request, ownerId(authorization)));
+    }
+
+    /** JWT subject(GitHub id). 미로그인/무효 토큰이면 null. */
+    private String ownerId(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) return null;
+        try {
+            Claims c = jwtService.parse(authorization.substring(7));
+            String sub = c.getSubject();
+            return (sub == null || sub.isBlank()) ? null : sub;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** Bean Validation 실패 (400) → 첫 번째 필드 오류 메시지 반환 */

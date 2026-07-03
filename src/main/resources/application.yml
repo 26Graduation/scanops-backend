@@ -75,11 +75,18 @@ scanops:
   model:
     url: ${SCANOPS_MODEL_URL:http://localhost:8100}
   api-key: ${SCANOPS_API_KEY:}
+  dast:
+    # DAST(웹) 스캔에 도메인 소유권 인증을 강제할지. 데모에서 임시로 끄려면 false.
+    require-verification: ${DAST_REQUIRE_VERIFICATION:true}
 
 github:
+  # 공개 레포 조회용 선택적 토큰(레이트리밋). 프라이빗 접근은 아래 App 설치로 처리.
+  token: ${GITHUB_TOKEN:}
   app:
     id: ${GITHUB_APP_ID:}
     private-key: ${GITHUB_APP_PRIVATE_KEY:}
+    # github.com/apps/<slug> 의 slug. 설치 URL 생성에 사용.
+    slug: ${GITHUB_APP_SLUG:}
   webhook:
     secret: ${GITHUB_WEBHOOK_SECRET:}
 

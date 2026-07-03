@@ -2,12 +2,9 @@ package com.scanops.scan;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.jsonwebtoken.Jwts;
+import com.scanops.github.GithubAppService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.openssl.PEMKeyPair;
-import org.bouncycastle.openssl.PEMParser;
-import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,10 +12,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
-import java.security.PrivateKey;
-import java.time.Instant;
 import java.util.*;
 
 /**
@@ -31,12 +25,6 @@ import java.util.*;
 @Slf4j
 public class GitHubAppWebhookController {
 
-    @Value("${github.app.id:}")
-    private String appId;
-
-    @Value("${github.app.private-key:}")
-    private String privateKeyPem;
-
     @Value("${github.webhook.secret:}")
     private String webhookSecret;
 
@@ -47,6 +35,7 @@ public class GitHubAppWebhookController {
     private String scanopsApiKey;
 
     private final GithubScanService githubScanService;
+    private final GithubAppService githubAppService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final Set<String> TARGET_EXTS = Set.of(
@@ -109,7 +98,7 @@ public class GitHubAppWebhookController {
         String headRepoName = headParts[1];
 
         try {
-            String token = getInstallationToken(installationId);
+            String token = githubAppService.getInstallationToken(installationId);
             if (token == null) { log.error("[Webhook] 토큰 발급 실패"); return; }
 
             WebClient gh = WebClient.builder()
@@ -310,7 +299,7 @@ public class GitHubAppWebhookController {
         } catch (Exception e) {
             log.error("[Webhook] processPr 오류: {}", e.getMessage(), e);
             try {
-                String token = getInstallationToken(installationId);
+                String token = githubAppService.getInstallationToken(installationId);
                 if (token != null) {
                     WebClient gh = WebClient.builder().baseUrl("https://api.github.com")
                             .defaultHeader("Authorization", "Bearer " + token)
@@ -339,56 +328,6 @@ public class GitHubAppWebhookController {
             log.info("[Webhook] Commit Status → {} : {}", state, description);
         } catch (Exception e) {
             log.warn("[Webhook] Commit Status 실패: {}", e.getMessage());
-        }
-    }
-
-    // ── GitHub App JWT / 토큰 ─────────────────────────────────────────────────
-
-    private String generateJwt() throws Exception {
-        String pem = privateKeyPem.replace("\\n", "\n").replace("\\r", "").trim();
-        if (!pem.contains("-----BEGIN")) {
-            pem = "-----BEGIN RSA PRIVATE KEY-----\n" + pem + "\n-----END RSA PRIVATE KEY-----";
-        }
-
-        PEMParser parser = new PEMParser(new StringReader(pem));
-        Object obj = parser.readObject();
-        parser.close();
-
-        if (obj == null) throw new IllegalArgumentException("PEM 파싱 실패");
-
-        PrivateKey privateKey;
-        if (obj instanceof PEMKeyPair keyPair) {
-            privateKey = new JcaPEMKeyConverter().getKeyPair(keyPair).getPrivate();
-        } else {
-            throw new IllegalArgumentException("Unsupported PEM: " + obj.getClass());
-        }
-
-        Instant now = Instant.now();
-        return Jwts.builder()
-                .issuer(appId)
-                .issuedAt(Date.from(now.minusSeconds(60)))
-                .expiration(Date.from(now.plusSeconds(540)))
-                .signWith(privateKey)
-                .compact();
-    }
-
-    private String getInstallationToken(long installationId) {
-        try {
-            String jwt = generateJwt();
-            JsonNode resp = WebClient.builder()
-                    .baseUrl("https://api.github.com")
-                    .defaultHeader("Authorization", "Bearer " + jwt)
-                    .defaultHeader("Accept", "application/vnd.github+json")
-                    .build()
-                    .post()
-                    .uri("/app/installations/{id}/access_tokens", installationId)
-                    .retrieve()
-                    .bodyToMono(JsonNode.class)
-                    .block();
-            return resp != null ? resp.path("token").asText() : null;
-        } catch (Exception e) {
-            log.error("[Webhook] JWT/토큰 발급 오류: {}", e.getMessage(), e);
-            return null;
         }
     }
 

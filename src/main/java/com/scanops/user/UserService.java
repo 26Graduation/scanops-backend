@@ -5,6 +5,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -26,6 +28,31 @@ public class UserService {
         user.setEmail(email);
         if (name != null) user.setName(name);
         if (githubId != null) user.setGithubId(githubId);
+        return userRepository.save(user);
+    }
+
+    /**
+     * 이메일 계정에 GitHub을 연동한다(= 하나의 계정).
+     * userId 행에 github_id를 붙이고, 같은 github_id를 이미 다른 행이 갖고 있으면
+     * 떼어내(중복 방지, 비파괴) 유일성을 유지한다.
+     */
+    @Transactional
+    public User linkGithubToUser(UUID userId, String githubId, String name) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("연동할 계정을 찾을 수 없습니다"));
+
+        if (githubId != null && !githubId.isBlank()) {
+            userRepository.findByGithubId(githubId).ifPresent(other -> {
+                if (!other.getUserId().equals(userId)) {
+                    other.setGithubId(null);       // 이전 GitHub 전용 행에서 분리
+                    userRepository.save(other);
+                }
+            });
+            user.setGithubId(githubId);
+        }
+        if ((user.getName() == null || user.getName().isBlank()) && name != null && !name.isBlank()) {
+            user.setName(name);
+        }
         return userRepository.save(user);
     }
 

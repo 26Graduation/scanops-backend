@@ -3,10 +3,14 @@ package com.scanops.auth;
 import com.scanops.user.User;
 import com.scanops.user.UserService;
 import io.jsonwebtoken.Claims;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -23,6 +27,9 @@ public class AuthController {
 
     private final JwtService jwtService;
     private final UserService userService;
+
+    @Value("${app.frontend-url}")
+    private String frontendUrl;
 
     /** 이메일 회원가입 → 즉시 로그인(JWT 발급). */
     @PostMapping("/signup")
@@ -59,6 +66,29 @@ public class AuthController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * GitHub 계정 연동 시작. 이미 로그인한(이메일) 사용자의 JWT를 받아 쿠키로 심고
+     * GitHub OAuth 로 보낸다. 성공 시 {@link OAuth2SuccessHandler}가 이 쿠키를 읽어
+     * 해당 계정에 github_id 를 붙인다(= 같은 계정). 프론트는 이 URL 로 브라우저를 이동시킨다.
+     */
+    @GetMapping("/github/link")
+    public void githubLink(@RequestParam("token") String token, HttpServletResponse response) throws IOException {
+        try {
+            jwtService.parse(token); // 유효한 로그인 토큰인지 확인
+        } catch (Exception e) {
+            response.sendRedirect(frontendUrl + "/login?error=link_invalid");
+            return;
+        }
+        Cookie cookie = new Cookie(OAuth2SuccessHandler.LINK_COOKIE, token);
+        cookie.setPath("/");
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setMaxAge(300); // 5분 — 연동 왕복 동안만 유효
+        cookie.setAttribute("SameSite", "Lax"); // GitHub 리다이렉트 왕복에 쿠키 유지
+        response.addCookie(cookie);
+        response.sendRedirect("/oauth2/authorization/github");
     }
 
     @GetMapping("/me")

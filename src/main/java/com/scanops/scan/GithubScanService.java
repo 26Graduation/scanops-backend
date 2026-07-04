@@ -170,7 +170,19 @@ public class GithubScanService {
         // 레포 주인이 App을 설치했으면 그 레포 전용 단기 토큰(프라이빗 접근 가능). 없으면 null.
         String token = githubAppService.tokenForRepo(owner, repo);
         log.info("GitHub 레포 스캔 시작: {}/{} (설치토큰 {})", owner, repo, token != null ? "사용" : "없음");
-        List<Map<String, Object>> files = listRepoFiles(owner, repo, token);
+        List<Map<String, Object>> files;
+        try {
+            files = listRepoFiles(owner, repo, token);
+        } catch (Exception e) {
+            // 설치 토큰이 없는데 접근 실패 = 프라이빗 레포(또는 존재하지 않음) → App 설치 안내
+            if (token == null) {
+                throw new RepoAccessException(
+                        owner + "/" + repo + " 레포에 접근할 수 없어요. 프라이빗 레포라면 ScanOps App을 "
+                        + "이 레포에 설치해 주세요. (연동 > App 설치 > \"Only select repositories\"에서 이 레포 선택)");
+            }
+            throw new RepoAccessException(
+                    "GitHub 레포에 접근하지 못했어요. 레포가 존재하는지, App 권한이 유효한지 확인해 주세요.");
+        }
         log.info("분석 대상 파일: {}개", files.size());
 
         List<ScanopsModelClient.AnalyzeRequest> requests = new ArrayList<>();

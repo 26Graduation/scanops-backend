@@ -134,6 +134,9 @@ public class GithubPipelineRunner {
         } catch (Exception e) {
             log.error("[GitHub 스캔] 실패: {}", e.getMessage(), e);
             scan.setStatus(ScanStatus.FAILED);
+            scan.setFailureReason(e instanceof RepoAccessException
+                    ? e.getMessage()
+                    : "스캔 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.");
             scan.setCompletedAt(LocalDateTime.now());
             scanRepository.save(scan);
         }

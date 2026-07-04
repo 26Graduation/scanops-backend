@@ -68,6 +68,10 @@ public class Scan {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
+    /** 실패(FAILED) 시 사용자에게 보여줄 사유. 성공/진행 중이면 null. */
+    @Column(name = "failure_reason", columnDefinition = "TEXT")
+    private String failureReason;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)
     private LocalDateTime createdAt;

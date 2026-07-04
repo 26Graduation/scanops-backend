@@ -113,15 +113,27 @@ public class ScanService {
      * @param mode null/"ALL"이면 전체, WEBSITE·GITHUB_REPO면 해당 모드만.
      * @param q    대상 URL 부분 검색어(빈 값이면 전체).
      */
-    public Page<Scan> listScans(int page, int size, String mode, String q) {
+    /**
+     * 로그인 사용자(ownerId=JWT subject=userId)가 소유한 스캔 기록만 반환.
+     * 미로그인/무효 토큰이면 빈 페이지(남의 스캔이 보이지 않도록).
+     */
+    public Page<Scan> listScans(String ownerId, int page, int size, String mode, String q) {
         Pageable pageable = PageRequest.of(
                 Math.max(page, 0), Math.min(Math.max(size, 1), 100),
                 Sort.by(Sort.Direction.DESC, "createdAt"));
 
+        UUID userId;
+        try {
+            userId = (ownerId == null || ownerId.isBlank()) ? null : UUID.fromString(ownerId);
+        } catch (IllegalArgumentException e) {
+            userId = null;
+        }
+        if (userId == null) return Page.empty(pageable);
+
         String query = q == null ? "" : q.trim();
 
         if (mode == null || mode.isBlank() || mode.equalsIgnoreCase("ALL")) {
-            return scanRepository.findByTargetContainingIgnoreCase(query, pageable);
+            return scanRepository.findByUser_UserIdAndTargetContainingIgnoreCase(userId, query, pageable);
         }
         ScanMode m;
         try {
@@ -129,7 +141,7 @@ public class ScanService {
         } catch (IllegalArgumentException e) {
             return Page.empty(pageable);
         }
-        return scanRepository.findByScanModeAndTargetContainingIgnoreCase(m, query, pageable);
+        return scanRepository.findByUser_UserIdAndScanModeAndTargetContainingIgnoreCase(userId, m, query, pageable);
     }
 
     /** 스캔 기록 삭제. 연결된 취약점(scan_id)도 함께 제거한다. */

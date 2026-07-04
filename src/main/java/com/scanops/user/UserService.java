@@ -21,13 +21,32 @@ public class UserService {
                 .orElseGet(() -> userRepository.save(User.builder().email(email).build()));
     }
 
-    /** OAuth(GitHub) 로그인 성공 시 프로필로 upsert (결정 6). */
+    /**
+     * OAuth(GitHub) 로그인 성공 시 프로필로 upsert.
+     * 계정 탐색 우선순위: (1) github_id → (2) email → (3) 신규.
+     * github_id를 먼저 보므로, 다른 이메일로 가입 후 GitHub을 연동한 계정도
+     * GitHub 로그인 시 같은 계정으로 이어진다(중복 계정 방지).
+     * 기존 계정의 email은 GitHub 이메일로 덮어쓰지 않는다(연동 이메일 보존).
+     */
     @Transactional
     public User upsertGithubUser(String email, String name, String githubId) {
-        User user = userRepository.findByEmail(email).orElseGet(User::new);
-        user.setEmail(email);
-        if (name != null) user.setName(name);
-        if (githubId != null) user.setGithubId(githubId);
+        User user = null;
+        if (githubId != null && !githubId.isBlank()) {
+            user = userRepository.findByGithubId(githubId).orElse(null);
+        }
+        if (user == null) {
+            user = userRepository.findByEmail(email).orElse(null);
+        }
+        if (user == null) {                 // 신규 계정만 email 설정
+            user = new User();
+            user.setEmail(email);
+        }
+        if (name != null && (user.getName() == null || user.getName().isBlank())) {
+            user.setName(name);
+        }
+        if (githubId != null && !githubId.isBlank()) {
+            user.setGithubId(githubId);
+        }
         return userRepository.save(user);
     }
 

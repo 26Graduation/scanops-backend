@@ -15,4 +15,8 @@ public interface ScanRepository extends JpaRepository<Scan, UUID> {
     // 기록 검색/필터 (target 부분검색, scanMode 필터)
     Page<Scan> findByTargetContainingIgnoreCase(String target, Pageable pageable);
     Page<Scan> findByScanModeAndTargetContainingIgnoreCase(ScanMode scanMode, String target, Pageable pageable);
+
+    // 로그인 사용자별 기록 (userId 스코프 + 검색/필터)
+    Page<Scan> findByUser_UserIdAndTargetContainingIgnoreCase(UUID userId, String target, Pageable pageable);
+    Page<Scan> findByUser_UserIdAndScanModeAndTargetContainingIgnoreCase(UUID userId, ScanMode scanMode, String target, Pageable pageable);
 }

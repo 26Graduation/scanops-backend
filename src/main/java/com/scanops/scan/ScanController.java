@@ -74,11 +74,13 @@ public class ScanController {
      */
     @GetMapping
     public ResponseEntity<Page<Scan>> listScans(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String mode,
             @RequestParam(defaultValue = "") String q) {
-        return ResponseEntity.ok(scanService.listScans(page, size, mode, q));
+        // 로그인 사용자(subject=userId) 소유 스캔만 반환
+        return ResponseEntity.ok(scanService.listScans(ownerId(authorization), page, size, mode, q));
     }
 
     @DeleteMapping("/{id}")

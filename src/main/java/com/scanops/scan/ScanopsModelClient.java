@@ -6,12 +6,17 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 /**
  * ScanOps Model API (FastAPI) 클라이언트
- * scripts/api_server.py 서버와 통신
+ * scripts/api_rebuild.py 서버와 통신 (2026-07 재구축 Qwen3.5-9B 단일 모델)
+ *
+ * 타임아웃: 모델이 RunPod Serverless로 라우팅되면 cold start(워커 기동+모델 로드)가
+ * 첫 요청에 수 분 얹힐 수 있어 명시적으로 넉넉히 잡는다. 실패 시엔 기존대로
+ * null/빈 결과로 graceful 처리되어 스캔 자체는 완료된다.
  */
 @Component
 @RequiredArgsConstructor
@@ -33,7 +38,9 @@ public class ScanopsModelClient {
             boolean detected, int stage,
             String vulnerability, String severity,
             Double cvss_score,
+            String reason,                       // rebuild: 모델 탐지 근거 한 줄 (영어)
             String attack, String fix,
+            String summary,                      // 한줄 요약 (한국어, 메타 생성)
             List<CveReference> cve_references,
             double elapsed
     ) {}
@@ -52,6 +59,7 @@ public class ScanopsModelClient {
                     .bodyValue(new AnalyzeRequest(language, code, filePath, true))
                     .retrieve()
                     .bodyToMono(AnalyzeResult.class)
+                    .timeout(Duration.ofSeconds(480))   // cold start + 판정 + 메타 생성
                     .block();
         } catch (Exception e) {
             log.warn("ScanOps model 서버 미연결 ({}): 단건 분석 생략", e.getMessage());
@@ -68,6 +76,7 @@ public class ScanopsModelClient {
                     .bodyValue(new BatchRequest(files, false))
                     .retrieve()
                     .bodyToMono(BatchResult.class)
+                    .timeout(Duration.ofMinutes(30))    // 레포 전체 파일 순차 분석
                     .block();
             return result != null ? result : new BatchResult(0, 0, List.of(), 0);
         } catch (Exception e) {
@@ -84,6 +93,7 @@ public class ScanopsModelClient {
                     .uri(modelUrl + "/health")
                     .retrieve()
                     .bodyToMono(Map.class)
+                    .timeout(Duration.ofSeconds(10))
                     .block();
             return result != null && "ok".equals(result.get("status"));
         } catch (Exception e) {

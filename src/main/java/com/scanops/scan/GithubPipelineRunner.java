@@ -99,7 +99,7 @@ public class GithubPipelineRunner {
                             .vulnType(r.vulnerability())
                             .severity(mapSeverity(r.severity()))
                             .cause("파일: " + r.file_path()
-                                    + "\n공격: " + r.attack()
+                                    + "\n공격: " + attackText(r)
                                     + (cveDesc.isEmpty() ? "" : "\n관련 CVE: " + cveDesc))
                             .solution(r.fix())
                             .url(scan.getTarget() + "/blob/HEAD/" + r.file_path())
@@ -113,7 +113,7 @@ public class GithubPipelineRunner {
                                 .severity(mapSeverity(r.severity()))
                                 .cause("파일: " + r.file_path()
                                         + "\n줄번호: " + lineNum
-                                        + "\n공격: " + r.attack()
+                                        + "\n공격: " + attackText(r)
                                         + (cveDesc.isEmpty() ? "" : "\n관련 CVE: " + cveDesc))
                                 .solution(r.fix())
                                 .url(scan.getTarget() + "/blob/HEAD/" + r.file_path() + "#L" + lineNum)
@@ -140,6 +140,12 @@ public class GithubPipelineRunner {
             scan.setCompletedAt(LocalDateTime.now());
             scanRepository.save(scan);
         }
+    }
+
+    /** 공격 설명 — 한국어 메타(attack)가 비면 모델 REASON(rebuild, 영어 1줄)으로 폴백 */
+    private String attackText(ScanopsModelClient.AnalyzeResult r) {
+        if (r.attack() != null && !r.attack().isBlank()) return r.attack();
+        return r.reason() != null ? r.reason() : "";
     }
 
     private Severity mapSeverity(String severity) {

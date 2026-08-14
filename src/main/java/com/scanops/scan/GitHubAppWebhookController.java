@@ -36,6 +36,7 @@ public class GitHubAppWebhookController {
 
     private final GithubScanService githubScanService;
     private final GithubAppService githubAppService;
+    private final PrScanBilling prScanBilling;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final Set<String> TARGET_EXTS = Set.of(
@@ -74,11 +75,15 @@ public class GitHubAppWebhookController {
             String headSha        = root.path("pull_request").path("head").path("sha").asText();
             String headRepoFullName = root.path("pull_request").path("head").path("repo").path("full_name").asText();
             if (headRepoFullName.isBlank()) headRepoFullName = repoFullName;
+            // 과금 대상 계정 식별 — users.github_id는 GitHub 숫자 id를 담는다.
+            String ownerGithubId  = root.path("repository").path("owner").path("id").asText("");
 
             log.info("[Webhook] PR #{} repo={} action={}", prNumber, repoFullName, action);
 
             final String finalHeadRepo = headRepoFullName;
-            new Thread(() -> processPr(installationId, repoFullName, finalHeadRepo, prNumber, headSha)).start();
+            final String finalOwnerGithubId = ownerGithubId;
+            new Thread(() -> processPr(installationId, repoFullName, finalHeadRepo, prNumber, headSha,
+                    finalOwnerGithubId)).start();
 
         } catch (Exception e) {
             log.error("[Webhook] 파싱 오류: {}", e.getMessage());
@@ -89,7 +94,8 @@ public class GitHubAppWebhookController {
 
     // ── PR 처리 ───────────────────────────────────────────────────────────────
 
-    private void processPr(long installationId, String repo, String headRepo, int prNumber, String headSha) {
+    private void processPr(long installationId, String repo, String headRepo, int prNumber, String headSha,
+                           String ownerGithubId) {
         String[] parts    = repo.split("/", 2);
         String owner      = parts[0];
         String repoName   = parts[1];
@@ -164,6 +170,13 @@ public class GitHubAppWebhookController {
                 return;
             }
 
+            // 토큰 예약. 분석에 실패하면 아래에서 전액 반환한다.
+            long changedLines = prFiles.stream()
+                    .mapToLong(f -> GithubScanService.countLines((String) f.get("content")))
+                    .sum();
+            Optional<String> billingKey =
+                    prScanBilling.hold(ownerGithubId, repo, prNumber, headSha, changedLines);
+
             // 4. scanops-model /analyze/pr 호출 (파일당 여러 취약점 타입 반환)
             WebClient model = WebClient.builder()
                     .baseUrl(modelUrl)
@@ -187,14 +200,18 @@ public class GitHubAppWebhookController {
                         .block();
             } catch (Exception e) {
                 log.error("[Webhook] 모델 API 호출 실패: {}", e.getMessage());
+                prScanBilling.release(billingKey, "PR 분석 실패 — 무과금");
                 postCommitStatus(gh, headOwner, headRepoName, headSha, "failure", "모델 분석 실패", "scanops/security");
                 return;
             }
 
             if (prScanResp == null) {
+                prScanBilling.release(billingKey, "PR 분석 무응답 — 무과금");
                 postCommitStatus(gh, headOwner, headRepoName, headSha, "failure", "모델 응답 없음", "scanops/security");
                 return;
             }
+
+            prScanBilling.commit(billingKey, changedLines);
 
             // 5. 결과 처리
             JsonNode findings = prScanResp.path("findings");

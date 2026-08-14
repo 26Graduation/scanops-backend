@@ -1,5 +1,6 @@
 package com.scanops.auth;
 
+import com.scanops.subscription.SubscriptionService;
 import com.scanops.user.User;
 import com.scanops.user.UserService;
 import io.jsonwebtoken.Claims;
@@ -27,6 +28,7 @@ public class AuthController {
 
     private final JwtService jwtService;
     private final UserService userService;
+    private final SubscriptionService subscriptionService;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -91,6 +93,11 @@ public class AuthController {
         response.sendRedirect("/oauth2/authorization/github");
     }
 
+    /**
+     * 프로필 + 현재 플랜. plan은 JWT에 박아둔 값이 아니라 매번 구독 테이블을 조회해서 최신
+     * 상태로 내려준다 — JWT는 최대 {@code app.jwt.ttl-hours}(기본 7일)까지 살아있는데, 그 안에서
+     * 업그레이드/해지가 일어나면 캐시된 값은 바로 어긋난다.
+     */
     @GetMapping("/me")
     public ResponseEntity<?> me(@RequestHeader(value = "Authorization", required = false) String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) {
@@ -98,13 +105,14 @@ public class AuthController {
         }
         try {
             Claims c = jwtService.parse(authorization.substring(7));
+            String plan = subscriptionService.currentPlan(java.util.UUID.fromString(c.getSubject())).name();
             return ResponseEntity.ok(Map.of(
                     "id", c.getSubject(),
                     "githubLogin", c.get("login", String.class),
                     "name", c.get("name", String.class),
                     "email", c.get("email", String.class),
                     "avatarUrl", c.get("avatar", String.class),
-                    "plan", c.get("plan", String.class)
+                    "plan", plan
             ));
         } catch (Exception e) {
             return ResponseEntity.status(401).body(Map.of("error", "유효하지 않은 토큰입니다"));
@@ -120,7 +128,6 @@ public class AuthController {
         claims.put("name", user.getName() != null ? user.getName() : "");
         claims.put("email", user.getEmail() != null ? user.getEmail() : "");
         claims.put("avatar", "");
-        claims.put("plan", "FREE");                     // 결제 도입 전 기본 플랜
         String token = jwtService.issue(claims, user.getUserId().toString());
         return Map.of("token", token);
     }

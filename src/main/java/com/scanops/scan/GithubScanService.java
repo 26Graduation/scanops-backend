@@ -92,8 +92,11 @@ public class GithubScanService {
 
     /**
      * 레포지토리의 모든 분석 대상 파일 목록 조회 (GitHub Trees API)
+     *
+     * @param maxFiles 분석할 최대 파일 수. 플랜별 한도({@link com.scanops.subscription.Plan#maxFilesPerScan()})가
+     *                 들어온다. 과금이 "분석된 줄 수" 기준이므로 이 값이 곧 스캔 1회의 상한이 된다.
      */
-    public List<Map<String, Object>> listRepoFiles(String owner, String repo, String token) {
+    public List<Map<String, Object>> listRepoFiles(String owner, String repo, String token, int maxFiles) {
         String url = String.format("https://api.github.com/repos/%s/%s/git/trees/HEAD?recursive=1",
                 owner, repo);
 
@@ -127,8 +130,29 @@ public class GithubScanService {
                     if (dot < 0) return false;
                     return TARGET_EXTENSIONS.contains(path.substring(dot));
                 })
-                .limit(50) // 최대 50개 파일 (과부하 방지)
+                .limit(Math.max(1, maxFiles)) // 플랜별 상한 (과부하 방지)
                 .toList();
+    }
+
+    /**
+     * 스캔 시작 전 예상 과금액(토큰) 산정용 — 분석 대상 파일들의 blob 크기 합계.
+     * Trees API 한 번만 호출한다. 접근 실패 시 0을 돌려주고, 호출부는 최소 과금으로 예약한 뒤
+     * 완료 시점에 실제 분석량으로 정산한다.
+     */
+    public long estimateAnalyzableBytes(String repoUrl, int maxFiles) {
+        try {
+            String[] parts = parseRepoUrl(repoUrl);
+            String token = githubAppService.tokenForRepo(parts[0], parts[1]);
+            return listRepoFiles(parts[0], parts[1], token, maxFiles).stream()
+                    .mapToLong(f -> {
+                        Object size = f.get("size");
+                        return size instanceof Number n ? n.longValue() : 0L;
+                    })
+                    .sum();
+        } catch (Exception e) {
+            log.warn("레포 크기 추정 실패({}) — 최소 과금으로 예약 후 정산: {}", repoUrl, e.getMessage());
+            return 0;
+        }
     }
 
     /**
@@ -154,16 +178,19 @@ public class GithubScanService {
         }
     }
 
-    /** 스캔 결과 + 파일 내용 맵 */
+    /** 스캔 결과 + 파일 내용 맵 + 실제 분석된 줄 수(과금 기준) */
     public record ScanResult(
         ScanopsModelClient.BatchResult batch,
-        Map<String, String> fileContents   // filePath → code
+        Map<String, String> fileContents,  // filePath → code
+        long analyzedLines                 // 모델에 실제로 넘긴 코드의 총 줄 수
     ) {}
 
     /**
      * GitHub 레포 전체 분석 (파일 내용도 함께 반환)
+     *
+     * @param maxFiles 플랜별 파일 수 상한
      */
-    public ScanResult scanRepo(String repoUrl) {
+    public ScanResult scanRepo(String repoUrl, int maxFiles) {
         String[] parts = parseRepoUrl(repoUrl);
         String owner = parts[0], repo = parts[1];
 
@@ -172,7 +199,7 @@ public class GithubScanService {
         log.info("GitHub 레포 스캔 시작: {}/{} (설치토큰 {})", owner, repo, token != null ? "사용" : "없음");
         List<Map<String, Object>> files;
         try {
-            files = listRepoFiles(owner, repo, token);
+            files = listRepoFiles(owner, repo, token, maxFiles);
         } catch (Exception e) {
             // 설치 토큰이 없는데 접근 실패 = 프라이빗 레포(또는 존재하지 않음) → App 설치 안내
             if (token == null) {
@@ -187,6 +214,7 @@ public class GithubScanService {
 
         List<ScanopsModelClient.AnalyzeRequest> requests = new ArrayList<>();
         Map<String, String> fileContents = new java.util.LinkedHashMap<>();
+        long analyzedLines = 0;   // 건너뛴 파일(빈 파일·8000자 초과)은 과금 대상에서 제외된다
 
         for (Map<String, Object> file : files) {
             String path = (String) file.get("path");
@@ -199,14 +227,22 @@ public class GithubScanService {
 
             requests.add(new ScanopsModelClient.AnalyzeRequest(lang, code, path, true));
             fileContents.put(path, code);
+            analyzedLines += countLines(code);
         }
 
         if (requests.isEmpty()) {
-            return new ScanResult(new ScanopsModelClient.BatchResult(0, 0, List.of(), 0), Map.of());
+            return new ScanResult(new ScanopsModelClient.BatchResult(0, 0, List.of(), 0), Map.of(), 0);
         }
 
-        log.info("모델 분석 시작: {}개 파일", requests.size());
-        return new ScanResult(modelClient.analyzeBatch(requests), fileContents);
+        log.info("모델 분석 시작: {}개 파일 / {}줄", requests.size(), analyzedLines);
+        return new ScanResult(modelClient.analyzeBatch(requests), fileContents, analyzedLines);
+    }
+
+    /** 과금 기준 줄 수. 마지막 줄에 개행이 없어도 1줄로 센다. */
+    static long countLines(String code) {
+        if (code == null || code.isEmpty()) return 0;
+        long newlines = code.chars().filter(c -> c == '\n').count();
+        return code.endsWith("\n") ? newlines : newlines + 1;
     }
 
     /**

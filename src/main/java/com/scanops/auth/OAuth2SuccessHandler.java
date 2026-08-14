@@ -86,7 +86,7 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
             claims.put("name", account.getName() != null ? account.getName() : (login != null ? login : "user"));
             claims.put("email", account.getEmail() != null ? account.getEmail() : "");
             claims.put("avatar", avatar != null ? avatar : ""); // User엔 미저장 — 세션 표시용
-            claims.put("plan", "FREE"); // 결제 도입 전 기본 플랜
+            // plan은 더 이상 JWT에 담지 않는다 — /api/auth/me가 매번 구독 테이블을 조회해서 내려준다.
 
             // subject = DB userId (이메일/깃헙 로그인 통합 식별자)
             String token = jwtService.issue(claims, account.getUserId().toString());

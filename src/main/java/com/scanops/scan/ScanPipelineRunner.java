@@ -2,6 +2,7 @@ package com.scanops.scan;
 
 import com.scanops.ai.AiRouter;
 import com.scanops.ai.VulnMetaResult;
+import com.scanops.token.TokenService;
 import com.scanops.vulnerability.CvssCalculator;
 import com.scanops.vulnerability.Severity;
 import com.scanops.vulnerability.Vulnerability;
@@ -27,6 +28,7 @@ public class ScanPipelineRunner {
     private final VulnerabilityService vulnerabilityService;
     private final CvssCalculator cvssCalculator;
     private final AiRouter aiRouter;
+    private final TokenService tokenService;
 
     @Async("scanExecutor")
     public void run(Scan scan) {
@@ -65,9 +67,14 @@ public class ScanPipelineRunner {
 
             vulnerabilityService.updateScanAggregates(scan);
             scan.setStatus(ScanStatus.COMPLETED);
+
+            // DAST는 횟수 정액이라 예약(1회) 그대로 확정된다.
+            tokenService.commit(TokenService.scanKey(scan.getScanId()), 1, "웹사이트 점검 1회");
         } catch (Exception e) {
             log.error("Scan pipeline failed for scan {}: {}", scan.getScanId(), e.getMessage());
             scan.setStatus(ScanStatus.FAILED);
+            // 실패한 스캔은 과금하지 않는다.
+            tokenService.release(TokenService.scanKey(scan.getScanId()), "웹 점검 실패");
         }
 
         scan.setCompletedAt(LocalDateTime.now());

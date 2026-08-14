@@ -1,5 +1,9 @@
 package com.scanops.scan;
 
+import com.scanops.subscription.Plan;
+import com.scanops.token.BillingResolver;
+import com.scanops.token.TokenPolicy;
+import com.scanops.token.TokenService;
 import com.scanops.vulnerability.Severity;
 import com.scanops.vulnerability.Vulnerability;
 import com.scanops.vulnerability.VulnerabilityService;
@@ -27,6 +31,8 @@ public class GithubPipelineRunner {
     private final GithubScanService githubScanService;
     private final ScanRepository scanRepository;
     private final VulnerabilityService vulnerabilityService;
+    private final BillingResolver billingResolver;
+    private final TokenService tokenService;
 
     // 취약점 유형별 키워드 (줄번호 탐색용)
     private static final Map<String, List<String>> VULN_KEYWORDS = Map.ofEntries(
@@ -72,8 +78,9 @@ public class GithubPipelineRunner {
             scan.setStartedAt(LocalDateTime.now());
             scanRepository.save(scan);
 
+            Plan plan = billingResolver.resolve(scan.getUser()).plan();
             GithubScanService.ScanResult scanResult =
-                    githubScanService.scanRepo(scan.getTarget());
+                    githubScanService.scanRepo(scan.getTarget(), plan.maxFilesPerScan());
             ScanopsModelClient.BatchResult result = scanResult.batch();
             java.util.Map<String, String> fileContents = scanResult.fileContents();
 
@@ -124,12 +131,12 @@ public class GithubPipelineRunner {
             }
 
             vulnerabilityService.updateScanAggregates(scan);
-            scan.setStatus(ScanStatus.COMPLETED);
+            settle(scan, result, scanResult.analyzedLines());
             scan.setCompletedAt(LocalDateTime.now());
             scanRepository.save(scan);
 
-            log.info("[GitHub 스캔] 완료: 취약점 {}개 발견 / 총 {}개 파일",
-                    result.detected_count(), result.total());
+            log.info("[GitHub 스캔] 완료: 취약점 {}개 발견 / 총 {}개 파일 / {}줄",
+                    result.detected_count(), result.total(), scanResult.analyzedLines());
 
         } catch (Exception e) {
             log.error("[GitHub 스캔] 실패: {}", e.getMessage(), e);
@@ -139,7 +146,35 @@ public class GithubPipelineRunner {
                     : "스캔 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.");
             scan.setCompletedAt(LocalDateTime.now());
             scanRepository.save(scan);
+            tokenService.release(TokenService.scanKey(scan.getScanId()), "소스코드 점검 실패");
         }
+    }
+
+    /**
+     * 스캔 상태 확정 + 토큰 정산.
+     *
+     * <p>모델 서버가 죽어 있으면 {@link ScanopsModelClient}가 예외 대신 빈 결과를 돌려주기 때문에,
+     * 분석 대상 파일은 있었는데 결과가 0건이면 "성공"이 아니라 실패로 봐야 한다.
+     * 이 경로에서 과금하면 결과 없이 토큰만 빠져나간다.
+     */
+    private void settle(Scan scan, ScanopsModelClient.BatchResult result, long analyzedLines) {
+        String key = TokenService.scanKey(scan.getScanId());
+
+        if (analyzedLines == 0) {                       // 분석할 코드가 없던 레포 — 무과금
+            scan.setStatus(ScanStatus.COMPLETED);
+            tokenService.release(key, "분석 대상 파일이 없어 과금하지 않음");
+            return;
+        }
+        if (result.total() == 0) {                      // 모델 서버 미연결 — 결과 없음
+            scan.setStatus(ScanStatus.FAILED);
+            scan.setFailureReason("분석 엔진에 연결하지 못했어요. 토큰은 차감되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+            tokenService.release(key, "분석 엔진 미응답 — 무과금");
+            return;
+        }
+
+        scan.setStatus(ScanStatus.COMPLETED);
+        long tokens = TokenPolicy.tokensForLines(analyzedLines);
+        tokenService.commit(key, tokens, String.format("소스코드 점검 %,d줄", analyzedLines));
     }
 
     /** 공격 설명 — 한국어 메타(attack)가 비면 모델 REASON(rebuild, 영어 1줄)으로 폴백 */

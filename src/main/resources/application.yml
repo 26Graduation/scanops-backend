@@ -19,6 +19,18 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: true   # 기존 비-Flyway DB에도 안전하게 적용
+  mail:
+    # 미설정(MAIL_HOST 비어있음)이면 MailService가 발송을 건너뛰고 로그만 남긴다 — 부팅은 항상 정상.
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
   security:
     oauth2:
       client:
@@ -34,6 +46,8 @@ spring:
 # 사용자 로그인용 OAuth/JWT (GitHub App과 별개)
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  mail:
+    from: ${MAIL_FROM:ScanOps <noreply@scanops.dev>}
   jwt:
     # 운영에선 32바이트 이상 랜덤 시크릿을 JWT_SECRET 환경변수로 주입
     secret: ${JWT_SECRET:dev-only-secret-change-me-please-32bytes-min!!}
@@ -47,6 +61,12 @@ management:
   endpoint:
     health:
       show-details: never
+  health:
+    mail:
+      # 메일 발송 기능(MailService)은 SMTP 실패 시에도 회원가입/체험 흐름을 막지 않는다.
+      # 반면 auto-registered MailHealthIndicator는 SMTP 연결 실패 시 /actuator/health
+      # 전체를 DOWN으로 끌어내려, Railway healthcheckPath 기반 재시작을 유발할 수 있다.
+      enabled: false
 
 server:
   port: ${PORT:8080}
@@ -69,7 +89,9 @@ ai:
     api-key: ${GEMINI_API_KEY:}
 
 cors:
-  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174,https://*.vercel.app,https://*.up.railway.app}
+  # localhost:* — Vite는 기본 포트(5173)가 이미 쓰이면 5174, 5175... 로 자동 증가시키는데,
+  # 특정 포트만 허용하면 로컬에서 여러 프로젝트를 같이 띄울 때마다 CORS가 막힌다.
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:*,https://*.vercel.app,https://*.up.railway.app}
 
 scanops:
   model:

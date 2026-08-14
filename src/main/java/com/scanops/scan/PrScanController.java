@@ -24,6 +24,7 @@ public class PrScanController {
 
     private final ScanopsModelClient modelClient;
     private final GithubScanService githubScanService;
+    private final PrScanBilling prScanBilling;
 
     @PostMapping("/pr-scan")
     public ResponseEntity<?> scanPr(
@@ -52,7 +53,22 @@ public class PrScanController {
                     req.repo(), req.prNumber(), 0, 0, List.of(), 0));
         }
 
+        // 변경 코드 줄 수로 예약 → 분석 결과가 비면(모델 서버 미연결) 전액 반환.
+        long changedLines = requests.stream()
+                .mapToLong(r -> GithubScanService.countLines(r.code()))
+                .sum();
+        var billingKey = prScanBilling.hold(
+                req.ownerGithubId(), req.repo(), req.prNumber(), contentDigest(requests), changedLines);
+
         ScanopsModelClient.BatchResult batch = modelClient.analyzeBatch(requests);
+
+        if (batch.total() == 0) {
+            prScanBilling.release(billingKey, "PR 분석 무응답 — 무과금");
+            log.warn("[PR 스캔] 분석 엔진 미응답 — 무과금 처리: {}#{}", req.repo(), req.prNumber());
+            return ResponseEntity.status(503).body(Map.of(
+                    "error", "분석 엔진에 연결하지 못했어요. 토큰은 차감되지 않았습니다."));
+        }
+        prScanBilling.commit(billingKey, changedLines);
 
         // AnalyzeResult → PrScanFinding 변환 (patch의 diff_line은 Action이 전달)
         List<PrScanFinding> findings = batch.results().stream()
@@ -83,6 +99,18 @@ public class PrScanController {
 
         log.info("[PR 스캔] 완료: 취약점 {}개 / {}개 파일", batch.detected_count(), batch.total());
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 멱등 키에 쓸 내용 지문. Action 경로에는 커밋 SHA가 없어 파일 경로+길이로 대신한다.
+     * 같은 diff를 재시도하면 이중 과금되지 않고, 코드가 바뀌면 새로 과금된다.
+     */
+    private String contentDigest(List<ScanopsModelClient.AnalyzeRequest> requests) {
+        int hash = requests.stream()
+                .map(r -> r.file_path() + ":" + (r.code() == null ? 0 : r.code().length()))
+                .reduce("", (a, b) -> a + "|" + b)
+                .hashCode();
+        return Integer.toHexString(hash);
     }
 
     /** patch 문자열에서 첫 번째 추가 라인 번호 추출 (@@ -n,m +start ... 형식) */

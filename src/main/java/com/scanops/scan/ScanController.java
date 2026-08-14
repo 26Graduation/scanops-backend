@@ -1,10 +1,14 @@
 package com.scanops.scan;
 
 import com.scanops.auth.JwtService;
+import com.scanops.token.ConcurrentScanLimitException;
+import com.scanops.token.InsufficientTokensException;
+import com.scanops.token.TokenPolicy;
 import com.scanops.vulnerability.Vulnerability;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -56,6 +60,25 @@ public class ScanController {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException e) {
         return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+    }
+
+    /** 토큰 잔액 부족 (402) — 프론트에서 충전/업그레이드 유도에 쓴다. */
+    @ExceptionHandler(InsufficientTokensException.class)
+    public ResponseEntity<Map<String, Object>> handleInsufficientTokens(InsufficientTokensException e) {
+        return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED).body(Map.of(
+                "error", e.getMessage(),
+                "required", e.getRequired(),
+                "available", e.getAvailable(),
+                "purchaseTokens", TokenPolicy.PURCHASE_TOKENS,
+                "purchasePriceKrw", TokenPolicy.PURCHASE_PRICE_KRW));
+    }
+
+    /** 플랜별 동시 실행 한도 초과 (429) */
+    @ExceptionHandler(ConcurrentScanLimitException.class)
+    public ResponseEntity<Map<String, Object>> handleConcurrentLimit(ConcurrentScanLimitException e) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
+                "error", e.getMessage(),
+                "limit", e.getLimit()));
     }
 
     @GetMapping("/{id}")

@@ -1,11 +1,18 @@
 package com.scanops.scan;
 
+import com.scanops.subscription.Plan;
+import com.scanops.subscription.SubscriptionService;
+import com.scanops.token.BillingResolver;
+import com.scanops.token.HoldUnit;
+import com.scanops.token.TokenPolicy;
+import com.scanops.token.TokenService;
 import com.scanops.user.User;
 import com.scanops.user.UserService;
 import com.scanops.verify.DomainVerifyService;
 import com.scanops.vulnerability.Vulnerability;
 import com.scanops.vulnerability.VulnerabilityService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -19,6 +26,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ScanService {
 
     private final ScanRepository scanRepository;
@@ -27,6 +35,10 @@ public class ScanService {
     private final ScanPipelineRunner pipelineRunner;
     private final GithubPipelineRunner githubPipelineRunner;
     private final VulnerabilityService vulnerabilityService;
+    private final GithubScanService githubScanService;
+    private final SubscriptionService subscriptionService;
+    private final TokenService tokenService;
+    private final BillingResolver billingResolver;
 
     /** DAST(웹) 스캔에 도메인 소유권 인증을 강제할지. 데모 등에서 끄려면 false. */
     @Value("${scanops.dast.require-verification:true}")
@@ -95,12 +107,67 @@ public class ScanService {
 
         Scan saved = scanRepository.save(scan);
 
+        // 토큰 예약(HOLD). 잔액 부족·동시 실행 초과면 스캔 레코드를 지우고 예외를 그대로 올린다
+        // (PENDING 상태로 남아 사용자 기록을 어지럽히지 않도록).
+        try {
+            reserveTokens(owner, saved, mode);
+        } catch (RuntimeException e) {
+            scanRepository.delete(saved);
+            throw e;
+        }
+
         if (mode == ScanMode.GITHUB_REPO) {
             githubPipelineRunner.run(saved);
         } else {
             pipelineRunner.run(saved);
         }
         return saved;
+    }
+
+    /**
+     * 스캔 예상 비용을 예약한다.
+     *
+     * <ul>
+     *   <li>WEBSITE(DAST): <b>횟수</b> 차감, 1스캔=1회. 24시간 내 같은 URL을 이미 성공
+     *       스캔했다면 무과금(예약 자체를 안 함).</li>
+     *   <li>GITHUB_REPO(SAST): <b>토큰</b> 차감. 레포 blob 크기로 줄 수를 추정해 예약하고,
+     *       완료 시 실제 분석된 줄 수로 정산. 추정에 실패하면 최소 과금(300토큰)만 잡는다.</li>
+     * </ul>
+     */
+    private void reserveTokens(User owner, Scan scan, ScanMode mode) {
+        BillingResolver.Billing billing = billingResolver.resolve(owner);
+        Plan plan = billing.plan();
+        String key = TokenService.scanKey(scan.getScanId());
+
+        if (mode == ScanMode.GITHUB_REPO) {
+            long bytes = githubScanService.estimateAnalyzableBytes(scan.getTarget(), plan.maxFilesPerScan());
+            long estimate = bytes > 0
+                    ? TokenPolicy.estimateTokensForBytes(bytes)
+                    : TokenPolicy.SAST_MIN_TOKENS;
+            tokenService.hold(billing.wallet(), plan, HoldUnit.TOKEN, estimate, key, scan.getScanId());
+            log.info("[토큰] 스캔 {} 예약 {} 토큰 (플랜 {}{})",
+                    scan.getScanId(), estimate, plan, billing.team() ? ", 팀 공유 지갑" : "");
+            return;
+        }
+
+        if (isFreeRescan(owner, scan.getTarget())) {
+            log.info("[DAST] 24시간 내 재스캔 — 무과금: {}", scan.getTarget());
+            return;
+        }
+        tokenService.hold(billing.wallet(), plan, HoldUnit.DAST, 1, key, scan.getScanId());
+        log.info("[DAST] 스캔 {} 예약 1회 (플랜 {}{})",
+                scan.getScanId(), plan, billing.team() ? ", 팀 공유 지갑" : "");
+    }
+
+    /** 같은 URL을 24시간 안에 이미 성공적으로 점검했으면 다시 받지 않는다(웹 스캔 한정). */
+    private boolean isFreeRescan(User owner, String target) {
+        return scanRepository
+                .findFirstByUser_UserIdAndTargetAndStatusOrderByCompletedAtDesc(
+                        owner.getUserId(), target, ScanStatus.COMPLETED)
+                .map(Scan::getCompletedAt)
+                .filter(completedAt -> completedAt.isAfter(
+                        java.time.LocalDateTime.now().minusHours(TokenPolicy.RESCAN_FREE_WINDOW_HOURS)))
+                .isPresent();
     }
 
     public Scan getScan(UUID id) {

@@ -33,6 +33,13 @@ public class User {
     @Column(name = "github_id")
     private String githubId;   // GitHub 미연동 시 null
 
+    /**
+     * 7일 무료체험을 사용한 시각(계정당 1회). null이면 아직 체험 자격이 남아 있다.
+     * 구독 행은 해지 후 재가입 시 새로 생기므로 체험 이력은 계정에 남긴다.
+     */
+    @Column(name = "trial_used_at")
+    private LocalDateTime trialUsedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)
     private LocalDateTime createdAt;

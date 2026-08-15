@@ -58,7 +58,10 @@ public class TokenController {
         body.put("heldBalance", wallet.getHeldBalance());
         body.put("available", available);
         body.put("monthlyGrant", plan.monthlyTokens());
-        body.put("sourceLinesLeft", available / TokenPolicy.SAST_TOKENS_PER_1K_LINES * 1_000);
+        // 먼저 나누면 300토큰(=1,000줄) 단위로 뭉텅이로 버려져 실제 차감한 줄 수와 표시가
+        // 어긋난다(예: 411토큰 차감돼도 표시는 1,000줄 단위로만 변함). 곱셈을 먼저 해서
+        // 토큰 1개 단위의 정밀도로 환산한다.
+        body.put("sourceLinesLeft", available * 1_000 / TokenPolicy.SAST_TOKENS_PER_1K_LINES);
         // DAST(웹 점검) — 토큰과 별개인 횟수 카운터
         body.put("dastSubscriptionRemaining", wallet.getDastSubscriptionRemaining());
         body.put("dastPurchasedRemaining", wallet.getDastPurchasedRemaining());

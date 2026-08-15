@@ -66,13 +66,18 @@ public final class TokenPolicy {
     // ── 계산 헬퍼 ───────────────────────────────────────────────────────────
 
     /**
-     * 분석된 줄 수에 대한 과금액. 1,000줄 단위로 올림하되 최소 {@link #SAST_MIN_TOKENS}.
-     * 990줄이든 1,000줄이든 300토큰, 1,001줄이면 600토큰.
+     * 분석된 줄 수에 대한 과금액. 첫 1,000줄은 고정 최소과금({@link #SAST_MIN_TOKENS}) —
+     * 소형 레포도 GPU 기동 비용은 동일하기 때문. 그 이후부터는 1,000줄 단위 올림이 아니라
+     * 정확히 {@link #SAST_TOKENS_PER_1K_LINES}/1,000줄 단가로 선형 과금한다.
+     * (1,001줄에서 600토큰으로 튀는 "경계 절벽"을 없애기 위한 설계 — 990줄=300토큰,
+     * 1,001줄=301토큰, 1,370줄=411토큰.)
      */
     public static long tokensForLines(long lines) {
         if (lines <= 0) return 0;
-        long units = (lines + 999) / 1_000;
-        return Math.max(SAST_MIN_TOKENS, units * SAST_TOKENS_PER_1K_LINES);
+        if (lines <= 1_000) return SAST_MIN_TOKENS;
+        long extraLines = lines - 1_000;
+        long extraTokens = (extraLines * SAST_TOKENS_PER_1K_LINES + 999) / 1_000;
+        return SAST_MIN_TOKENS + extraTokens;
     }
 
     /**

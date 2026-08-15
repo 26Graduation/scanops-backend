@@ -8,14 +8,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class TokenPolicyTest {
 
     @Test
-    @DisplayName("소스코드 과금은 1,000줄 단위 올림 + 최소 300토큰")
+    @DisplayName("소스코드 과금은 첫 1,000줄 최소 300토큰 + 초과분 선형 과금 (경계 절벽 없음)")
     void tokensForLines() {
         assertEquals(0,     TokenPolicy.tokensForLines(0));
         assertEquals(300,   TokenPolicy.tokensForLines(1));
         assertEquals(300,   TokenPolicy.tokensForLines(990));
         assertEquals(300,   TokenPolicy.tokensForLines(1_000));
-        assertEquals(600,   TokenPolicy.tokensForLines(1_001));
-        assertEquals(1_500, TokenPolicy.tokensForLines(4_200));
+        assertEquals(301,   TokenPolicy.tokensForLines(1_001));
+        assertEquals(411,   TokenPolicy.tokensForLines(1_370));
+        assertEquals(1_260, TokenPolicy.tokensForLines(4_200));
     }
 
     @Test

@@ -40,6 +40,10 @@ public class User {
     @Column(name = "trial_used_at")
     private LocalDateTime trialUsedAt;
 
+    /** 베타테스터 사용경험 설문 참여 시각(계정당 1회). null이면 아직 참여 안 함. */
+    @Column(name = "survey_completed_at")
+    private LocalDateTime surveyCompletedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)
     private LocalDateTime createdAt;

@@ -44,6 +44,10 @@ public class ScanService {
     @Value("${scanops.dast.require-verification:true}")
     private boolean requireDastVerification;
 
+    /** 이 도메인은 ScanOps 자체 서비스이므로 소유권 인증 없이 DAST 스캔을 허용한다. */
+    @Value("${scanops.dast.self-scan-domain:scanops-frontend.vercel.app}")
+    private String selfScanDomain;
+
     /**
      * @param ownerId 로그인 사용자 식별자(JWT subject). WEBSITE 인증 스코프에 사용.
      *                미로그인(null)이고 인증이 강제되면 WEBSITE 스캔은 거부된다.
@@ -77,6 +81,8 @@ public class ScanService {
         }
 
         // WEBSITE(DAST): 소유권을 사용자별로 확인하고, 스캔 직전 .well-known 재검증(TOCTOU 방지).
+        // 단, ScanOps 자체 서비스 도메인은 로그인한 사용자에 한해 소유권 인증만 생략한다
+        // (로그인 자체는 다른 도메인과 동일하게 여전히 필요하다).
         boolean verified = false;
         if (mode == ScanMode.WEBSITE) {
             if (ownerId == null) {
@@ -84,11 +90,16 @@ public class ScanService {
                     throw new IllegalArgumentException("도메인 소유권 인증을 위해 로그인이 필요합니다.");
                 }
             } else {
-                verified = domainVerifyService.verifyForScan(ownerId, request.getTargetUrl());
-                if (requireDastVerification && !verified) {
-                    throw new IllegalArgumentException(
-                        "도메인 소유권 인증이 필요합니다. " + DomainVerifyService.VERIFY_PATH
-                        + " 파일을 배포하고 인증을 완료해 주세요.");
+                String domain = domainVerifyService.extractDomain(request.getTargetUrl());
+                if (domain.equalsIgnoreCase(selfScanDomain)) {
+                    verified = true;
+                } else {
+                    verified = domainVerifyService.verifyForScan(ownerId, request.getTargetUrl());
+                    if (requireDastVerification && !verified) {
+                        throw new IllegalArgumentException(
+                            "도메인 소유권 인증이 필요합니다. " + DomainVerifyService.VERIFY_PATH
+                            + " 파일을 배포하고 인증을 완료해 주세요.");
+                    }
                 }
             }
         }

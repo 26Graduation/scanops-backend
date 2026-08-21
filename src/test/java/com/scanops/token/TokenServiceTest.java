@@ -160,10 +160,10 @@ class TokenServiceTest {
     }
 
     @Test
-    @DisplayName("Pro는 동시 스캔 1개 — 두 번째 요청은 거부된다")
+    @DisplayName("Pro는 SAST 동시 스캔 2개까지 — 세 번째 요청은 거부된다")
     void concurrentScanLimit() {
         when(holdRepository.countByWalletIdAndStatusAndUnit(any(), eq(HoldStatus.HELD), eq(HoldUnit.TOKEN)))
-                .thenReturn(1L);
+                .thenReturn((long) Plan.PRO.maxConcurrentSastScans());
 
         assertThrows(ConcurrentScanLimitException.class,
                 () -> tokenService.hold(wallet, Plan.PRO, HoldUnit.TOKEN, 1_000, "scan:second", null));

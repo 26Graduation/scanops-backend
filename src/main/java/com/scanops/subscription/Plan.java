@@ -25,11 +25,11 @@ package com.scanops.subscription;
  */
 public enum Plan {
 
-    //      priceKrw  tokens    trialTok  trialOk  extraTok  maxScans filesCap  dastLimit dastExtra trialDast
-    FREE  ( 0,        0,        0,        false,   0,        1,       50,       0,        0,        0),
-    PRO   ( 19_900,   30_000,   7_500,    true,    0,        1,       100,      5,        0,        1),
-    MAX   ( 69_000,   120_000,  0,        false,   0,        3,       400,      30,       0,        0),
-    TEAM  ( 59_000,   100_000,  0,        false,   69_000,   5,       400,      20,       7,        0);
+    //      priceKrw  tokens    trialTok  trialOk  extraTok  dastScans sastScans filesCap  dastLimit dastExtra trialDast
+    FREE  ( 0,        0,        0,        false,   0,        1,        1,        50,       0,        0,        0),
+    PRO   ( 19_900,   30_000,   7_500,    true,    0,        3,        2,        100,      5,        0,        1),
+    MAX   ( 69_000,   120_000,  0,        false,   0,        3,        3,        400,      30,       0,        0),
+    TEAM  ( 59_000,   100_000,  0,        false,   69_000,   5,        5,        400,      20,       7,        0);
 
     /** 월 요금(원). TEAM은 기본 3인 요금이고, 인원 추가 시 {@link #extraSeatPriceKrw}가 더해진다. */
     private final int priceKrw;
@@ -41,8 +41,11 @@ public enum Plan {
     private final boolean trialEligible;
     /** 기본 인원을 넘는 멤버 1명당 추가 지급 토큰량 (TEAM 전용, SAST·액션 몫만). */
     private final long extraSeatTokens;
-    /** 동시에 실행할 수 있는 스캔 수 (GPU 동시성 보호). */
-    private final int maxConcurrentScans;
+    /** 동시에 실행할 수 있는 DAST(웹) 스캔 수. ZAP은 GPU와 무관한 별도 인스턴스에서 도는
+     *  자원이라 SAST·PR과 한도를 분리한다. */
+    private final int maxConcurrentDastScans;
+    /** 동시에 실행할 수 있는 SAST·PR(GPU 모델) 스캔 수 — RunPod 서버리스 워커 풀 보호용. */
+    private final int maxConcurrentSastScans;
     /** 레포 스캔 1회에 분석할 최대 파일 수. */
     private final int maxFilesPerScan;
     /** 결제주기마다 지급되는 DAST(웹) 점검 횟수. */
@@ -53,30 +56,32 @@ public enum Plan {
     private final int trialDastCount;
 
     Plan(int priceKrw, long monthlyTokens, long trialTokens, boolean trialEligible,
-         long extraSeatTokens, int maxConcurrentScans, int maxFilesPerScan,
+         long extraSeatTokens, int maxConcurrentDastScans, int maxConcurrentSastScans, int maxFilesPerScan,
          int dastMonthlyLimit, int dastExtraSeat, int trialDastCount) {
         this.priceKrw = priceKrw;
         this.monthlyTokens = monthlyTokens;
         this.trialTokens = trialTokens;
         this.trialEligible = trialEligible;
         this.extraSeatTokens = extraSeatTokens;
-        this.maxConcurrentScans = maxConcurrentScans;
+        this.maxConcurrentDastScans = maxConcurrentDastScans;
+        this.maxConcurrentSastScans = maxConcurrentSastScans;
         this.maxFilesPerScan = maxFilesPerScan;
         this.dastMonthlyLimit = dastMonthlyLimit;
         this.dastExtraSeat = dastExtraSeat;
         this.trialDastCount = trialDastCount;
     }
 
-    public int priceKrw()            { return priceKrw; }
-    public long monthlyTokens()      { return monthlyTokens; }
-    public long trialTokens()        { return trialTokens; }
-    public boolean trialEligible()   { return trialEligible; }
-    public long extraSeatTokens()    { return extraSeatTokens; }
-    public int maxConcurrentScans()  { return maxConcurrentScans; }
-    public int maxFilesPerScan()     { return maxFilesPerScan; }
-    public int dastMonthlyLimit()    { return dastMonthlyLimit; }
-    public int dastExtraSeat()       { return dastExtraSeat; }
-    public int trialDastCount()      { return trialDastCount; }
+    public int priceKrw()               { return priceKrw; }
+    public long monthlyTokens()         { return monthlyTokens; }
+    public long trialTokens()           { return trialTokens; }
+    public boolean trialEligible()      { return trialEligible; }
+    public long extraSeatTokens()       { return extraSeatTokens; }
+    public int maxConcurrentDastScans() { return maxConcurrentDastScans; }
+    public int maxConcurrentSastScans() { return maxConcurrentSastScans; }
+    public int maxFilesPerScan()        { return maxFilesPerScan; }
+    public int dastMonthlyLimit()       { return dastMonthlyLimit; }
+    public int dastExtraSeat()          { return dastExtraSeat; }
+    public int trialDastCount()         { return trialDastCount; }
 
     /** 기본 인원(TEAM=3)을 넘는 멤버 1명당 추가 요금(원). TEAM 외 플랜은 0. */
     public int extraSeatPriceKrw() {

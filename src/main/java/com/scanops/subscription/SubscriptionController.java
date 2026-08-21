@@ -57,7 +57,8 @@ public class SubscriptionController {
         m.put("trialDastCount", plan.trialDastCount());
         m.put("trialEligible", plan.trialEligible());
         m.put("trialDays", plan.trialEligible() ? com.scanops.token.TokenPolicy.TRIAL_DAYS : 0);
-        m.put("maxConcurrentScans", plan.maxConcurrentScans());
+        m.put("maxConcurrentDastScans", plan.maxConcurrentDastScans());
+        m.put("maxConcurrentSastScans", plan.maxConcurrentSastScans());
         m.put("maxFilesPerScan", plan.maxFilesPerScan());
         if (plan == Plan.TEAM) {
             m.put("baseSeats", 3);

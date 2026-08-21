@@ -62,6 +62,8 @@ public class TokenController {
         // 어긋난다(예: 411토큰 차감돼도 표시는 1,000줄 단위로만 변함). 곱셈을 먼저 해서
         // 토큰 1개 단위의 정밀도로 환산한다.
         body.put("sourceLinesLeft", available * 1_000 / TokenPolicy.SAST_TOKENS_PER_1K_LINES);
+        // 월 한도도 같은 환산식으로 내려줘야 프론트에서 "사용/한도" 바를 그릴 수 있다.
+        body.put("sourceLinesMonthlyLimit", (long) plan.monthlyTokens() * 1_000 / TokenPolicy.SAST_TOKENS_PER_1K_LINES);
         // DAST(웹 점검) — 토큰과 별개인 횟수 카운터
         body.put("dastSubscriptionRemaining", wallet.getDastSubscriptionRemaining());
         body.put("dastPurchasedRemaining", wallet.getDastPurchasedRemaining());
@@ -70,7 +72,8 @@ public class TokenController {
         body.put("dastMonthlyLimit", plan.dastMonthlyLimit());
         body.put("websiteScansLeft", dastAvailable);
         body.put("periodEnd", wallet.getPeriodEnd());
-        body.put("maxConcurrentScans", plan.maxConcurrentScans());
+        body.put("maxConcurrentDastScans", plan.maxConcurrentDastScans());
+        body.put("maxConcurrentSastScans", plan.maxConcurrentSastScans());
         body.put("topUpPriceKrw", TokenPolicy.PURCHASE_PRICE_KRW);
         body.put("topUpTokens", TokenPolicy.PURCHASE_TOKENS);
         body.put("dastTopUpPriceKrw", TokenPolicy.DAST_PURCHASE_PRICE_KRW);

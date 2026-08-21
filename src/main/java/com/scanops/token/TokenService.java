@@ -246,9 +246,10 @@ public class TokenService {
 
         TokenWallet wallet = lock(walletRef.getWalletId());
 
+        int concurrentLimit = unit == HoldUnit.TOKEN ? plan.maxConcurrentSastScans() : plan.maxConcurrentDastScans();
         long running = holdRepository.countByWalletIdAndStatusAndUnit(wallet.getWalletId(), HoldStatus.HELD, unit);
-        if (running >= plan.maxConcurrentScans()) {
-            throw new ConcurrentScanLimitException(plan.maxConcurrentScans());
+        if (running >= concurrentLimit) {
+            throw new ConcurrentScanLimitException(concurrentLimit);
         }
         long available = unit == HoldUnit.TOKEN ? wallet.available() : wallet.dastAvailable();
         if (available < amount) {

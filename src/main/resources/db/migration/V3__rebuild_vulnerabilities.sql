@@ -25,9 +25,4 @@ CREATE TABLE vulnerabilities (
     solution     TEXT
 );
 
--- V1__init_schema.sql:71 이 같은 이름의 인덱스를 이미 만든다.
--- 그대로 두면 **빈 DB 에서도** V3 가 반드시 실패한다
--- ("ERROR: relation \"idx_vulns_scan\" already exists" → flywayInitializer
---  BeanCreationException → 컨테이너 재시작 루프. 2026-08-17 온프레미스 기동 실측).
--- 이미 적용된 환경도 깨지지 않도록 IF NOT EXISTS 로 멱등화한다.
-CREATE INDEX IF NOT EXISTS idx_vulns_scan ON vulnerabilities(scan_id);
+CREATE INDEX idx_vulns_scan ON vulnerabilities(scan_id);

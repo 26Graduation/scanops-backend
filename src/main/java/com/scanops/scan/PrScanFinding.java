@@ -11,5 +11,8 @@ public record PrScanFinding(
         String attack,
         String fix,
         List<ScanopsModelClient.CveReference> cveReferences,
-        Integer diffLine
+        Integer diffLine,
+        String source,
+        String reason,
+        String aiPrompt
 ) {}

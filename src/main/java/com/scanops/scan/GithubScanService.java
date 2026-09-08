@@ -165,16 +165,16 @@ public class GithubScanService {
             Map<String, Object> response = buildGithubClient(token).get().uri(url).retrieve()
                     .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
                     .block();
-            if (response == null) return "";
+            if (response == null) throw new IllegalStateException("Empty GitHub response");
             String encoding = (String) response.get("encoding");
             String content  = (String) response.get("content");
             if ("base64".equals(encoding) && content != null) {
-                return new String(Base64.getDecoder().decode(content.replace("\n", "")));
+                return new String(Base64.getDecoder().decode(content.replace("\n", "")), java.nio.charset.StandardCharsets.UTF_8);
             }
-            return "";
+            throw new IllegalStateException("GitHub file content unavailable: " + path);
         } catch (Exception e) {
             log.warn("파일 가져오기 실패 {}: {}", path, e.getMessage());
-            return "";
+            throw new IllegalStateException("GitHub file content unavailable: " + path);
         }
     }
 
@@ -214,7 +214,7 @@ public class GithubScanService {
 
         List<ScanopsModelClient.AnalyzeRequest> requests = new ArrayList<>();
         Map<String, String> fileContents = new java.util.LinkedHashMap<>();
-        long analyzedLines = 0;   // 건너뛴 파일(빈 파일·8000자 초과)은 과금 대상에서 제외된다
+        long analyzedLines = 0;   // 빈 파일은 과금 대상에서 제외된다
 
         for (Map<String, Object> file : files) {
             String path = (String) file.get("path");
@@ -223,7 +223,7 @@ public class GithubScanService {
             String lang = EXT_TO_LANG.getOrDefault(ext, "Unknown");
 
             String code = fetchFileContent(owner, repo, path, token);
-            if (code.isBlank() || code.length() > 8000) continue;
+            if (code.isBlank()) continue;
 
             requests.add(new ScanopsModelClient.AnalyzeRequest(lang, code, path, true));
             fileContents.put(path, code);

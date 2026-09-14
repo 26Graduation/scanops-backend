@@ -85,17 +85,20 @@ public class GithubPipelineRunner {
             java.util.Map<String, String> fileContents = scanResult.fileContents();
 
             // 탐지된 취약점만 저장
-            for (ScanopsModelClient.AnalyzeResult r : result.results()) {
+            for (ScanopsModelClient.AnalyzeResult r : result.results().stream()
+                    .flatMap(item -> item.individualResults().stream()).toList()) {
                 if (!r.detected()) continue;
 
-                String cveDesc = r.cve_references().isEmpty() ? ""
+                String cveDesc = r.cve_references() == null || r.cve_references().isEmpty() ? ""
                         : r.cve_references().stream()
                             .map(c -> c.cve_id() + " (" + c.severity() + ")")
                             .reduce((a, b) -> a + ", " + b)
                             .orElse("");
 
                 // 취약 라인 목록 탐색 — 같은 유형이 여러 줄에 있으면 각각 저장
-                List<Integer> lineNums = findVulnLines(
+                List<Integer> lineNums = r.line() != null && r.line() > 0
+                        ? List.of(r.line()) : r.source() != null && r.source().startsWith("cpg")
+                        ? List.of() : findVulnLines(
                         fileContents.getOrDefault(r.file_path(), ""),
                         r.vulnerability()
                 );
@@ -108,7 +111,7 @@ public class GithubPipelineRunner {
                             .cause("파일: " + r.file_path()
                                     + "\n공격: " + attackText(r)
                                     + (cveDesc.isEmpty() ? "" : "\n관련 CVE: " + cveDesc))
-                            .solution(r.fix())
+                            .solution(remediationText(r))
                             .url(scan.getTarget() + "/blob/HEAD/" + r.file_path())
                             .build();
                     vulnerabilityService.save(vuln);
@@ -122,7 +125,7 @@ public class GithubPipelineRunner {
                                         + "\n줄번호: " + lineNum
                                         + "\n공격: " + attackText(r)
                                         + (cveDesc.isEmpty() ? "" : "\n관련 CVE: " + cveDesc))
-                                .solution(r.fix())
+                                .solution(remediationText(r))
                                 .url(scan.getTarget() + "/blob/HEAD/" + r.file_path() + "#L" + lineNum)
                                 .build();
                         vulnerabilityService.save(vuln);
@@ -179,8 +182,19 @@ public class GithubPipelineRunner {
 
     /** 공격 설명 — 한국어 메타(attack)가 비면 모델 REASON(rebuild, 영어 1줄)으로 폴백 */
     private String attackText(ScanopsModelClient.AnalyzeResult r) {
+        if (r.source() != null && (r.source().startsWith("cpg") || r.source().startsWith("qwen-"))) {
+            return "탐지 출처: " + r.source() + "\n근거: "
+                    + (r.reason() == null ? "" : r.reason()) + "\n"
+                    + (r.attack() == null ? "" : r.attack());
+        }
         if (r.attack() != null && !r.attack().isBlank()) return r.attack();
         return r.reason() != null ? r.reason() : "";
+    }
+
+    private String remediationText(ScanopsModelClient.AnalyzeResult r) {
+        String fix = r.fix() == null ? "" : r.fix();
+        return r.ai_prompt() == null || r.ai_prompt().isBlank() ? fix
+                : fix + "\n\n수정 요청 프롬프트:\n" + r.ai_prompt();
     }
 
     private Severity mapSeverity(String severity) {

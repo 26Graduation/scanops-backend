@@ -72,8 +72,11 @@ public class PrScanController {
 
         // AnalyzeResult → PrScanFinding 변환 (patch의 diff_line은 Action이 전달)
         List<PrScanFinding> findings = batch.results().stream()
+                .flatMap(r -> r.individualResults().stream())
                 .map(r -> {
-                    Integer diffLine = req.files().stream()
+                    Integer diffLine = r.line() != null && r.line() > 0 ? r.line() :
+                            r.source() != null && (r.source().startsWith("cpg") || r.source().equals("qwen-semantic"))
+                            ? null : req.files().stream()
                             .filter(f -> f.filename().equals(r.file_path()))
                             .findFirst()
                             .map(f -> extractFirstAddedLine(f.patch()))
@@ -87,7 +90,7 @@ public class PrScanController {
                             r.attack(),
                             r.fix(),
                             r.cve_references(),
-                            diffLine
+                            diffLine, r.source(), r.reason(), r.ai_prompt()
                     );
                 })
                 .toList();

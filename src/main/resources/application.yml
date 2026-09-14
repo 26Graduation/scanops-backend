@@ -96,6 +96,11 @@ cors:
 scanops:
   model:
     url: ${SCANOPS_MODEL_URL:http://localhost:8100}
+  java-model:
+    # Empty URL keeps all languages on the existing model endpoint.
+    url: ${SCANOPS_JAVA_MODEL_URL:}
+    api-key: ${SCANOPS_JAVA_API_KEY:}
+    timeout-seconds: ${SCANOPS_JAVA_TIMEOUT_SECONDS:900}
   api-key: ${SCANOPS_API_KEY:}
   dast:
     # DAST(웹) 스캔에 도메인 소유권 인증을 강제할지. 데모에서 임시로 끄려면 false.

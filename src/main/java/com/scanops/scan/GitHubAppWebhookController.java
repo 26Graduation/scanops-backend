@@ -28,11 +28,7 @@ public class GitHubAppWebhookController {
     @Value("${github.webhook.secret:}")
     private String webhookSecret;
 
-    @Value("${scanops.model.url:http://localhost:8100}")
-    private String modelUrl;
-
-    @Value("${scanops.api-key:}")
-    private String scanopsApiKey;
+    private final ScanopsModelClient modelClient;
 
     private final GithubScanService githubScanService;
     private final GithubAppService githubAppService;
@@ -125,9 +121,9 @@ public class GitHubAppWebhookController {
                     .bodyToMono(JsonNode.class)
                     .block();
 
-            if (filesNode == null || !filesNode.isArray()) {
+            if (filesNode == null || !filesNode.isArray() || filesNode.size() >= 50) {
                 log.warn("[Webhook] PR 파일 목록 없음");
-                postCommitStatus(gh, headOwner, headRepoName, headSha, "failure", "파일 목록 조회 실패", "scanops/security");
+                postCommitStatus(gh, headOwner, headRepoName, headSha, "failure", "파일 목록 조회 실패 또는 PR 파일 수 한도 초과", "scanops/security");
                 return;
             }
 
@@ -144,7 +140,7 @@ public class GitHubAppWebhookController {
 
                 try {
                     String contentB64 = gh.get()
-                            .uri("/repos/{owner}/{repo}/contents/{path}?ref={sha}", owner, repoName, filename, headSha)
+                            .uri("/repos/{owner}/{repo}/contents/{path}?ref={sha}", headOwner, headRepoName, filename, headSha)
                             .retrieve()
                             .bodyToMono(JsonNode.class)
                             .block()
@@ -152,7 +148,7 @@ public class GitHubAppWebhookController {
                             .replaceAll("\\s", "");
 
                     String content = new String(Base64.getDecoder().decode(contentB64), StandardCharsets.UTF_8);
-                    if (content.length() > 10000) content = content.substring(0, 10000);
+                    if (content.isBlank()) return;
 
                     Map<String, Object> file = new HashMap<>();
                     file.put("filename", filename);
@@ -161,7 +157,7 @@ public class GitHubAppWebhookController {
                     prFiles.add(file);
 
                 } catch (Exception e) {
-                    log.warn("[Webhook] 파일 읽기 실패: {}", filename);
+                    throw new IllegalStateException("PR file could not be read: " + filename, e);
                 }
             });
 
@@ -177,27 +173,10 @@ public class GitHubAppWebhookController {
             Optional<String> billingKey =
                     prScanBilling.hold(ownerGithubId, repo, prNumber, headSha, changedLines);
 
-            // 4. scanops-model /analyze/pr 호출 (파일당 여러 취약점 타입 반환)
-            WebClient model = WebClient.builder()
-                    .baseUrl(modelUrl)
-                    .defaultHeader("Content-Type", "application/json")
-                    .defaultHeader("X-Scanops-Key", scanopsApiKey)
-                    .build();
-
-            Map<String, Object> prScanReq = Map.of(
-                    "repo", repo,
-                    "pr_number", prNumber,
-                    "files", prFiles
-            );
-
+            // Java-only routing is centralized with the other scan entry points.
             JsonNode prScanResp;
             try {
-                prScanResp = model.post()
-                        .uri("/analyze/pr")
-                        .bodyValue(prScanReq)
-                        .retrieve()
-                        .bodyToMono(JsonNode.class)
-                        .block();
+                prScanResp = modelClient.analyzePr(repo, prNumber, prFiles);
             } catch (Exception e) {
                 log.error("[Webhook] 모델 API 호출 실패: {}", e.getMessage());
                 prScanBilling.release(billingKey, "PR 분석 실패 — 무과금");
@@ -269,7 +248,8 @@ public class GitHubAppWebhookController {
                 String cvssLine = cvss > 0 ? "\n**CVSS Score:** " + cvss : "";
                 String body = "### " + emoji + " [ScanOps] " + vuln + "\n" +
                               "**파일:** `" + filename + "` | **심각도:** " + sev + cvssLine + "\n" +
-                              "**위치:** " + loc + "\n\n" +
+                              "**위치:** " + loc + "\n" +
+                              "**탐지 출처:** " + finding.path("source").asText("legacy") + "\n\n" +
                               "**공격 시나리오:**\n" + attack + "\n\n" +
                               "**수정 방법:**\n" + fix +
                               (cveText.length() > 0 ? "\n\n**관련 CVE:**\n" + cveText : "");

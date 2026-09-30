@@ -87,7 +87,14 @@ public class ScanController {
     }
 
     @GetMapping("/{id}/vulnerabilities")
-    public ResponseEntity<List<Vulnerability>> getVulnerabilities(@PathVariable UUID id) {
+    public ResponseEntity<List<Vulnerability>> getVulnerabilities(@PathVariable UUID id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String owner = ownerId(authorization);
+        if (owner == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        Scan scan = scanService.getScan(id);
+        if (scan.getUser() == null || !owner.equals(scan.getUser().getUserId().toString())) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
         return ResponseEntity.ok(scanService.getVulnerabilities(id));
     }
 

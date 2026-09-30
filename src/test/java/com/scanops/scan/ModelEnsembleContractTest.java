@@ -16,7 +16,8 @@ class ModelEnsembleContractTest {
                  "vulnerability":"CWE-78","line":8,"severity":"UNKNOWN",
                  "fix":"command-specific fix","status":"DONE",
                  "findings":[
-                   {"cwe":"CWE-78","line":8,"source":"cpg","evidence_level":"static-rule"},
+                   {"cwe":"CWE-78","line":8,"source":"cpg","evidence_level":"static-rule",
+                    "path":[{"file":"Demo.java","line":8,"code":"exec(input)","role":"sink"}]},
                    {"cwe":"CWE-798","line":12,"source":"qwen-semantic",
                     "evidence_level":"semantic-review","reason":"Embedded password",
                     "accepted":true,"confidence":"high"}],
@@ -25,6 +26,9 @@ class ModelEnsembleContractTest {
         var rows = result.individualResults();
         assertEquals(2, rows.size());
         assertEquals("command-specific fix", rows.get(0).fix());
+        assertEquals("exec(input)", rows.get(0).evidence().get(0).get("code"));
+        assertEquals("cpg", rows.get(0).source());
+        assertNull(rows.get(1).evidence());
         assertEquals("CWE-798", rows.get(1).vulnerability());
         assertEquals(12, rows.get(1).line());
         assertTrue(rows.get(1).reason().contains("CPG 경로 증명 아님"));

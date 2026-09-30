@@ -43,7 +43,9 @@ public final class CpgGraph {
                               List<Map<String, Object>> path, String defaultFile,
                               Map<String, String> files) {
         if (graph == null) return from(source, path, defaultFile, files);
-        if (!"cpg".equals(source)) return null;
+        boolean context = source != null && source.startsWith("qwen-")
+                && "joern".equals(graph.get("origin")) && "code-context".equals(graph.get("evidence"));
+        if (!"cpg".equals(source) && !context) return null;
         var root = JSON.valueToTree(graph);
         if (!root.path("version").isInt() || root.path("version").asInt() != 2 || !"cpg".equals(root.path("kind").asText())
                 || !"finding-neighborhood".equals(root.path("scope").asText())
@@ -80,6 +82,14 @@ public final class CpgGraph {
         }
         var out = JSON.createObjectNode().put("version", 2).put("kind", "cpg")
                 .put("scope", "finding-neighborhood").put("truncated", root.path("truncated").asBoolean());
+        if (context) {
+            if (nodes.findValues("role").stream().anyMatch(n -> !"intermediate".equals(n.asText()))) return null;
+            out.put("origin", "joern").put("evidence", "code-context");
+            for (String key : List.of("requestedLine", "anchorLine")) {
+                if (!root.path(key).isInt() || root.path(key).asInt() <= 0) return null;
+                out.set(key, root.get(key));
+            }
+        }
         out.set("nodes", nodes);
         out.set("edges", edges);
         return out.toString();

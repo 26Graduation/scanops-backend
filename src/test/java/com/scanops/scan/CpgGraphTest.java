@@ -52,4 +52,17 @@ class CpgGraphTest {
         graph.put("edges", List.of(Map.of("source", "100", "target", "200", "kind", "invented")));
         assertNull(CpgGraph.from("cpg", graph, null, "A.java", Map.of()));
     }
+    @Test void acceptsJoernContextWithoutPromotingSemanticFinding() throws Exception {
+        var mapper = new ObjectMapper();
+        Map<String, Object> graph = mapper.readValue("""
+          {"version":2,"kind":"cpg","scope":"finding-neighborhood","truncated":false,
+           "origin":"joern","evidence":"code-context","requestedLine":3,"anchorLine":6,
+           "nodes":[{"id":"1","role":"intermediate","label":"CALL","file":"A.java","line":6,"code":"digest()","onPath":true}],"edges":[]}
+          """, Map.class);
+        var saved = mapper.readTree(CpgGraph.from("qwen-semantic", graph, null, "A.java", Map.of()));
+        assertEquals("code-context", saved.path("evidence").asText());
+        assertEquals(6, saved.path("anchorLine").asInt());
+        graph.remove("origin");
+        assertNull(CpgGraph.from("qwen-semantic", graph, null, "A.java", Map.of()));
+    }
 }

@@ -17,6 +17,7 @@ class ModelEnsembleContractTest {
                  "fix":"command-specific fix","status":"DONE",
                  "findings":[
                    {"cwe":"CWE-78","line":8,"source":"cpg","evidence_level":"static-rule",
+                    "cpg_graph":{"version":2,"nodes":[{"id":"joern-1"}],"edges":[]},
                     "path":[{"file":"Demo.java","line":8,"code":"exec(input)","role":"sink"}]},
                    {"cwe":"CWE-798","line":12,"source":"qwen-semantic",
                     "evidence_level":"semantic-review","reason":"Embedded password",
@@ -28,6 +29,8 @@ class ModelEnsembleContractTest {
         assertEquals("command-specific fix", rows.get(0).fix());
         assertEquals("exec(input)", rows.get(0).evidence().get(0).get("code"));
         assertEquals("cpg", rows.get(0).source());
+        assertEquals(2, rows.get(0).cpg_graph().get("version"));
+        assertNull(rows.get(1).cpg_graph());
         assertNull(rows.get(1).evidence());
         assertEquals("CWE-798", rows.get(1).vulnerability());
         assertEquals(12, rows.get(1).line());

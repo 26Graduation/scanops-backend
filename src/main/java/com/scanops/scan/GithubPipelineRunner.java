@@ -107,7 +107,7 @@ public class GithubPipelineRunner {
 
                 if (lineNums.isEmpty()) {
                     Vulnerability vuln = Vulnerability.builder()
-                            .cpgGraph(CpgGraph.from(r.source(), r.evidence(), r.file_path(), fileContents))
+                            .cpgGraph(CpgGraph.from(r.source(), r.cpg_graph(), r.evidence(), r.file_path(), fileContents))
                             .scan(scan)
                             .vulnType(r.vulnerability())
                             .severity(mapSeverity(r.severity()))
@@ -122,7 +122,7 @@ public class GithubPipelineRunner {
                     for (int lineNum : lineNums) {
                         SourceExcerpt excerpt = SourceExcerpt.around(fileContents.get(r.file_path()), lineNum);
                         Vulnerability vuln = Vulnerability.builder()
-                            .cpgGraph(CpgGraph.from(r.source(), r.evidence(), r.file_path(), fileContents))
+                            .cpgGraph(CpgGraph.from(r.source(), r.cpg_graph(), r.evidence(), r.file_path(), fileContents))
                                 .sourceSnippet(excerpt == null ? null : excerpt.code())
                                 .sourceStartLine(excerpt == null ? null : excerpt.startLine())
                                 .sourceLine(excerpt == null ? null : excerpt.targetLine())

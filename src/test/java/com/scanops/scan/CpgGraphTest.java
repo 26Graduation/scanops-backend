@@ -31,4 +31,25 @@ class CpgGraphTest {
         assertEquals("call-site", mapper.readTree(CpgGraph.from("cpg", List.of(step("sink", "A.java", 1)), "A.java", Map.of())).get("kind").asText());
         assertEquals("partial-flow", mapper.readTree(CpgGraph.from("cpg", List.of(step("source", "A.java", 1), step("intermediate", "A.java", 2)), "A.java", Map.of())).get("kind").asText());
     }
+    @Test void preservesActualTypedEdgesAndRejectsBrokenGraph() throws Exception {
+        var mapper = new ObjectMapper();
+        Map<String, Object> graph = mapper.readValue("""
+          {"version":2,"kind":"cpg","scope":"finding-neighborhood","truncated":false,
+           "nodes":[
+             {"id":"100","role":"source","label":"CALL","file":"A.java","line":1,"code":"input()","onPath":true},
+             {"id":"200","role":"sink","label":"CALL","file":"B.java","line":2,"code":"print(value)","onPath":true}],
+           "edges":[{"source":"100","target":"200","kind":"REACHING_DEF"},
+                    {"source":"200","target":"100","kind":"AST"}]}
+          """, Map.class);
+        var saved = mapper.readTree(CpgGraph.from("cpg", graph, null, "A.java", Map.of("B.java", "line1\nprint(value)")));
+        assertEquals(2, saved.path("version").asInt());
+        assertEquals(2, saved.path("edges").size());
+        assertEquals("AST", saved.path("edges").get(1).path("kind").asText());
+        assertEquals(2, saved.path("nodes").get(1).path("excerpt").path("targetLine").asInt());
+        assertNull(CpgGraph.from("qwen-semantic", graph, null, "A.java", Map.of()));
+        graph.put("edges", List.of(Map.of("source", "100", "target", "missing", "kind", "CFG")));
+        assertNull(CpgGraph.from("cpg", graph, null, "A.java", Map.of()));
+        graph.put("edges", List.of(Map.of("source", "100", "target", "200", "kind", "invented")));
+        assertNull(CpgGraph.from("cpg", graph, null, "A.java", Map.of()));
+    }
 }

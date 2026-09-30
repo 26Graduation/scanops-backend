@@ -74,7 +74,7 @@ public class ScanopsModelClient {
     public record EngineFinding(String cwe, Integer line, String source,
                                 String evidence_level, String reason,
                                 List<Map<String, Object>> path,
-                                List<String> contributors) {}
+                                List<String> contributors, Map<String, Object> cpg_graph) {}
 
     public record AnalyzeResult(
             String language, String file_path,
@@ -88,7 +88,8 @@ public class ScanopsModelClient {
             double elapsed,
             String status, String source, Integer line,
             List<Map<String, Object>> evidence, String ai_prompt,
-            List<EngineFinding> findings, Map<String, Object> analysis_details
+            List<EngineFinding> findings, Map<String, Object> analysis_details,
+            Map<String, Object> cpg_graph
     ) {
         /** Legacy responses remain one row; ensemble findings are never collapsed by file. */
         public List<AnalyzeResult> individualResults() {
@@ -110,7 +111,7 @@ public class ScanopsModelClient {
                         elapsed, status, f.source(), f.line(), f.path(),
                         representative ? ai_prompt : "파일 " + file_path + ", 줄 " + f.line()
                                 + ": " + advice + " 기존 동작을 보존하고 실제 악용 조건을 확인하세요.",
-                        List.of(), analysis_details);
+                        List.of(), analysis_details, f.cpg_graph());
             }).toList();
         }
     }

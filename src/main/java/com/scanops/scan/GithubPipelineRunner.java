@@ -83,6 +83,8 @@ public class GithubPipelineRunner {
                     githubScanService.scanRepo(scan.getTarget(), plan.maxFilesPerScan());
             ScanopsModelClient.BatchResult result = scanResult.batch();
             java.util.Map<String, String> fileContents = scanResult.fileContents();
+            String[] repository = githubScanService.parseRepoUrl(scan.getTarget());
+            String repositoryUrl = "https://github.com/" + repository[0] + "/" + repository[1];
 
             // 탐지된 취약점만 저장
             for (ScanopsModelClient.AnalyzeResult r : result.results().stream()
@@ -113,7 +115,7 @@ public class GithubPipelineRunner {
                                     + "\n공격: " + attackText(r)
                                     + (cveDesc.isEmpty() ? "" : "\n관련 CVE: " + cveDesc))
                             .solution(remediationText(r))
-                            .url(scan.getTarget() + "/blob/HEAD/" + r.file_path())
+                            .url(repositoryUrl + "/blob/HEAD/" + r.file_path())
                             .build();
                     vulnerabilityService.save(vuln);
                 } else {
@@ -133,7 +135,7 @@ public class GithubPipelineRunner {
                                         + "\n공격: " + attackText(r)
                                         + (cveDesc.isEmpty() ? "" : "\n관련 CVE: " + cveDesc))
                                 .solution(remediationText(r))
-                                .url(scan.getTarget() + "/blob/HEAD/" + r.file_path() + "#L" + lineNum)
+                                .url(repositoryUrl + "/blob/HEAD/" + r.file_path() + "#L" + lineNum)
                                 .build();
                         vulnerabilityService.save(vuln);
                     }
